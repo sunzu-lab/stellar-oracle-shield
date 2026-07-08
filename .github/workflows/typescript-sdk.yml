@@ -1,0 +1,109 @@
+name: typescript-sdk
+
+on:
+  workflow_dispatch: {}
+  workflow_call:
+    inputs:
+      version:
+        description: "Version à publier (le tag, ex. v0.1.0)."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+  NPM_REGISTRY: "https://npm.pkg.github.com"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Resolve owner scope
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "SCOPE=@${OWNER}" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=@${OWNER}/oracle-shield-ts-sdk" >> "$GITHUB_ENV"
+          echo "Scope résolu : @${OWNER}"
+
+      - name: Resolve mode and version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          CRATE_VERSION=$(grep -m1 '^version = ' contracts/oracle-shield/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DRY_RUN=true
+            VERSION="${CRATE_VERSION}"
+          else
+            DRY_RUN=false
+            VERSION="${INPUT_VERSION}"
+            VERSION="${VERSION#v}"
+            # Garde-fou : le tag DOIT correspondre à la version du crate, sinon le
+            # SDK publié et le contrat afficheraient des numéros différents.
+            if [ "${VERSION}" != "${CRATE_VERSION}" ]; then
+              echo "::error::Le tag v${VERSION} ne correspond pas à la version du crate (${CRATE_VERSION} dans contracts/oracle-shield/Cargo.toml). Aligne les deux avant de taguer."
+              exit 1
+            fi
+          fi
+          echo "DRY_RUN=${DRY_RUN}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "dry-run: ${DRY_RUN} — version: ${VERSION}"
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          registry-url: "https://npm.pkg.github.com"
+          scope: ${{ env.SCOPE }}
+
+      - name: Install stellar-cli (binaire précompilé, rapide)
+        run: |
+          curl -sL https://github.com/stellar/stellar-cli/releases/download/v27.0.0/stellar-cli-27.0.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          sudo mv stellar /usr/local/bin/
+
+      - name: Add WASM target
+        run: rustup target add wasm32v1-none
+
+      - name: Build WASM
+        run: cargo build --target wasm32v1-none --release -p stellar-oracle-shield
+
+      - name: Generate TypeScript bindings
+        run: |
+          stellar contract bindings typescript \
+            --wasm target/wasm32v1-none/release/stellar_oracle_shield.wasm \
+            --output-dir sdk/typescript/packages/generated --overwrite
+
+      - name: Set package metadata
+        working-directory: sdk/typescript/packages/generated
+        run: |
+          npm pkg set name="${PACKAGE_NAME}"
+          npm pkg set version="${VERSION}"
+          npm pkg set repository.type="git"
+          npm pkg set repository.url="git+https://github.com/${{ github.repository }}.git"
+          npm pkg set publishConfig.registry="${NPM_REGISTRY}"
+
+      - name: Build package
+        working-directory: sdk/typescript/packages/generated
+        run: |
+          npm install
+          npm run build
+
+      - name: Publish to GitHub Packages
+        working-directory: sdk/typescript/packages/generated
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: | # zizmor: ignore[use-trusted-publishing]
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Run manuel → VALIDATION seule (dry-run), aucune publication."
+            npm publish --dry-run
+          else
+            npm publish
+            echo "Publié : ${PACKAGE_NAME}@${VERSION}"
+          fi
