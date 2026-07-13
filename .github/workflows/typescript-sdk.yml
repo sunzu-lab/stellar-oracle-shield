@@ -5,7 +5,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: "Version à publier (le tag, ex. v0.1.0)."
+        description: "Version to publish (the tag, e.g. v0.1.0)."
         required: true
         type: string
 
@@ -32,7 +32,7 @@ jobs:
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "SCOPE=@${OWNER}" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=@${OWNER}/oracle-shield-ts-sdk" >> "$GITHUB_ENV"
-          echo "Scope résolu : @${OWNER}"
+          echo "Resolved scope: @${OWNER}"
 
       - name: Resolve mode and version
         env:
@@ -46,10 +46,10 @@ jobs:
             DRY_RUN=false
             VERSION="${INPUT_VERSION}"
             VERSION="${VERSION#v}"
-            # Garde-fou : le tag DOIT correspondre à la version du crate, sinon le
-            # SDK publié et le contrat afficheraient des numéros différents.
+            # Guard: the tag MUST match the crate version, otherwise the published
+            # SDK and the contract would show different version numbers.
             if [ "${VERSION}" != "${CRATE_VERSION}" ]; then
-              echo "::error::Le tag v${VERSION} ne correspond pas à la version du crate (${CRATE_VERSION} dans contracts/oracle-shield/Cargo.toml). Aligne les deux avant de taguer."
+              echo "::error::Tag v${VERSION} does not match the crate version (${CRATE_VERSION} in contracts/oracle-shield/Cargo.toml). Align them before tagging."
               exit 1
             fi
           fi
@@ -63,16 +63,14 @@ jobs:
           registry-url: "https://npm.pkg.github.com"
           scope: ${{ env.SCOPE }}
 
-      - name: Install stellar-cli (binaire précompilé, rapide)
-        run: |
-          curl -sL https://github.com/stellar/stellar-cli/releases/download/v27.0.0/stellar-cli-27.0.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv stellar /usr/local/bin/
-
-      - name: Add WASM target
-        run: rustup target add wasm32v1-none
+      - name: Install stellar-cli
+        uses: stellar/stellar-cli@5a7c5fe76530bf4248477ac812fc757146b98cc4 # v27.0.0
 
       - name: Build WASM
-        run: cargo build --target wasm32v1-none --release -p stellar-oracle-shield
+        run: |
+          rustup update
+          rustup target add wasm32v1-none
+          cargo build-wasm
 
       - name: Generate TypeScript bindings
         run: |
@@ -101,9 +99,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: | # zizmor: ignore[use-trusted-publishing]
           if [ "${DRY_RUN}" = "true" ]; then
-            echo "Run manuel → VALIDATION seule (dry-run), aucune publication."
+            echo "Manual run → validation only (dry-run), nothing is published."
             npm publish --dry-run
           else
             npm publish
-            echo "Publié : ${PACKAGE_NAME}@${VERSION}"
+            echo "Published: ${PACKAGE_NAME}@${VERSION}"
           fi

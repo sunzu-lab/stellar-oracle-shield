@@ -1,0 +1,18 @@
+{
+  "name": "oracle-shield-sdk-ts-example",
+  "private": true,
+  "type": "module",
+  "description": "Minimal example to query the Oracle Shield contract with typeScript SDK.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^2.5.0",
+    "@stellar/stellar-sdk": "^14.6.1",
+    "@sunzulab/oracle-shield-ts-sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

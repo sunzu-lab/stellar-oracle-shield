@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oracle Shield — minimal SDK example</title>
+    <script>
+      window.global ||= window;
+      window.process ||= { env: {}, browser: true };
+    </script>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 620px; margin: 40px auto; padding: 0 16px; }
+      label { display: block; margin: 12px 0 4px; font-size: 13px; color: #555; }
+      input { width: 100%; padding: 8px; font-family: ui-monospace, monospace; font-size: 12px; }
+      button { padding: 10px 16px; font-size: 14px; cursor: pointer; }
+      .modes { display: flex; gap: 8px; margin: 16px 0; }
+      .mode { background: #eee; border: 1px solid #ccc; border-radius: 6px; }
+      .mode.active { background: #6d5cff; color: #fff; border-color: #6d5cff; }
+      #run { margin-top: 16px; }
+      pre { margin-top: 16px; padding: 12px; background: #f4f4f7; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
+      [hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Stellar Oracle Shield</h1>
+
+    <div class="modes">
+      <button class="mode active" id="modeGet">Get</button>
+      <button class="mode" id="modeSet">Set</button>
+    </div>
+
+    <!-- shared fields -->
+    <label for="contract">Contract ID</label>
+    <input id="contract" value="CAU23HVBMCOEPE34KBRO7ABJIVIYX7JWCLVU4GIR7I4LPUZOEN66QQUG" />
+
+    <label for="base">Base asset (SAC address)</label>
+    <input id="base" value="CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" />
+
+    <label for="quote">Quote asset (SAC address)</label>
+    <input id="quote" value="GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" />
+    <!-- -->
+    <!-- only shown in Set mode -->
+    <div id="setFields" hidden>
+      <label>Wallet (must be the contract admin)</label>
+      <button type="button" id="connect">Connect wallet</button>
+      <div id="walletAddr" style="font-size:11px;color:#555;margin-top:6px;word-break:break-all;">Not connected</div>
+
+      <label for="score">Score (0–100)</label>
+      <input id="score" value="80" />
+    </div>
+
+    <button id="run">Query</button>
+    <!-- -->
+    <pre id="out">Result appears here…</pre>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
