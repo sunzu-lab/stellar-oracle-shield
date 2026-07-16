@@ -2,8 +2,10 @@
 
 use {
     super::*,
-    soroban_sdk::testutils::{Address as AddressTrait, AuthorizedFunction, AuthorizedInvocation},
-    soroban_sdk::{Env, IntoVal, Symbol, Val, Vec},
+    soroban_sdk::testutils::{
+        Address as AddressTrait, AuthorizedFunction, AuthorizedInvocation, Events,
+    },
+    soroban_sdk::{events::Event, Env, IntoVal, Symbol, Val, Vec},
 };
 
 fn contract_auth_for(
@@ -164,4 +166,53 @@ fn test_get_status() {
         client.try_get_status(&quote, &quote),
         Err(Ok(Error::PairNotCovered))
     );
+}
+
+#[test]
+fn test_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin_address = Address::generate(&env);
+    let constructor_args = (&admin_address,);
+    let contract_id = env.register(Contract, constructor_args.clone());
+
+    let client = ContractClient::new(&env, &contract_id);
+
+    let base = usdc_circle_address(&env);
+    let quote = xlm_address(&env);
+
+    client.set_score(&base, &quote, &0_i32);
+    assert!(env
+        .events()
+        .all()
+        .filter_by_contract(&contract_id)
+        .events()
+        .is_empty());
+
+    client.set_score(&base, &quote, &10_i32);
+    assert!(env
+        .events()
+        .all()
+        .filter_by_contract(&contract_id)
+        .events()
+        .is_empty());
+
+    client.set_score(&base, &quote, &44_i32);
+    let event = env.events().all().filter_by_contract(&contract_id);
+    let expected = StatusChange {
+        pair: Pair(base.clone(), quote.clone()),
+        status: Status::Degraded,
+    };
+
+    assert_eq!(event.events(), &[expected.to_xdr(&env, &contract_id)]);
+
+    client.set_score(&base, &quote, &66_i32);
+    let event = env.events().all().filter_by_contract(&contract_id);
+    let expected = StatusChange {
+        pair: Pair(base, quote),
+        status: Status::Healthy,
+    };
+
+    assert_eq!(event.events(), &[expected.to_xdr(&env, &contract_id)]);
 }

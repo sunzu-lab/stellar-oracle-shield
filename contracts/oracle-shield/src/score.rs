@@ -1,5 +1,5 @@
 use {
-    crate::error::Error,
+    crate::{error::Error, status::Status},
     soroban_sdk::{Env, IntoVal, TryFromVal, Val},
 };
 
@@ -21,6 +21,10 @@ impl Score {
 
     pub fn get(self) -> i32 {
         self.0
+    }
+
+    pub fn status(self) -> Status {
+        self.into()
     }
 }
 
