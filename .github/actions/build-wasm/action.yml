@@ -1,0 +1,57 @@
+name: Build WASM
+description: >
+  Build the contract to the WASM.
+  Requires stellar-cli to be installed by the caller.
+
+inputs:
+  package:
+    description: Cargo crate to build.
+    required: true
+  out-dir:
+    description: Directory the WASM is written to.
+    required: false
+    default: out
+  name:
+    description: Filename to give the WASM. Defaults to the crate's own artifact name.
+    required: false
+    default: ""
+
+outputs:
+  wasm:
+    description: Path to the built WASM.
+    value: ${{ steps.build.outputs.wasm }}
+
+runs:
+  using: composite
+  steps:
+    - id: build
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        OUT_DIR: ${{ inputs.out-dir }}
+        NAME: ${{ inputs.name }}
+      run: |
+        rustup update
+        rustup target add wasm32v1-none
+
+        stellar contract build --optimize \
+          --package "${PACKAGE}" \
+          --out-dir "${OUT_DIR}" \
+          --meta source_repo="github:${{ github.repository }}"
+
+        IN_WASM="${OUT_DIR}/${PACKAGE//-/_}.wasm"
+        OUT_WASM="${OUT_DIR}/${NAME:-${PACKAGE//-/_}.wasm}"
+
+        if [ "${IN_WASM}" != "${OUT_WASM}" ]; then
+          mv "${IN_WASM}" "${OUT_WASM}"
+        fi
+        
+        # Mainnet caps contracts at 128 KiB; fail at half that, before it hurts.
+        SIZE=$(stat -c %s "${OUT_WASM}")
+        echo "${OUT_WASM}: ${SIZE} bytes"
+        if [ "${SIZE}" -gt 65536 ]; then
+          echo "::error::${OUT_WASM} is ${SIZE} bytes, over the 64 KiB budget (mainnet limit: 128 KiB)."
+          exit 1
+        fi
+
+        echo "wasm=${OUT_WASM}" >> "$GITHUB_OUTPUT"

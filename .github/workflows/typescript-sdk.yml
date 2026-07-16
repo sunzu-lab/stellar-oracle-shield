@@ -8,6 +8,16 @@ on:
         description: "Version to publish (the tag, e.g. v0.1.0)."
         required: true
         type: string
+      wasm-artifact:
+        description: "Workflow artifact holding the released WASM. Empty (manual runs) means build it here."
+        required: false
+        type: string
+        default: ""
+      publish:
+        description: "Actually publish to the registry. Anything else is a dry-run."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +26,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   NPM_REGISTRY: "https://npm.pkg.github.com"
+  PACKAGE: stellar-oracle-shield
 
 jobs:
   publish:
@@ -25,7 +36,9 @@ jobs:
         with:
           persist-credentials: false
 
+      # Only useful when we compile the WASM ourselves.
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: ${{ !inputs.wasm-artifact }}
 
       - name: Resolve owner scope
         run: |
@@ -39,10 +52,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           CRATE_VERSION=$(grep -m1 '^version = ' contracts/oracle-shield/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            DRY_RUN=true
-            VERSION="${CRATE_VERSION}"
-          else
+          if [ "${{ inputs.publish }}" = "true" ]; then
             DRY_RUN=false
             VERSION="${INPUT_VERSION}"
             VERSION="${VERSION#v}"
@@ -52,6 +62,9 @@ jobs:
               echo "::error::Tag v${VERSION} does not match the crate version (${CRATE_VERSION} in contracts/oracle-shield/Cargo.toml). Align them before tagging."
               exit 1
             fi
+          else
+            DRY_RUN=true
+            VERSION="${CRATE_VERSION}"
           fi
           echo "DRY_RUN=${DRY_RUN}" >> "$GITHUB_ENV"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
@@ -66,16 +79,26 @@ jobs:
       - name: Install stellar-cli
         uses: stellar/stellar-cli@5a7c5fe76530bf4248477ac812fc757146b98cc4 # v27.0.0
 
+      - name: Download the released WASM
+        if: ${{ inputs.wasm-artifact }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.wasm-artifact }}
+          path: wasm
+
       - name: Build WASM
-        run: |
-          rustup update
-          rustup target add wasm32v1-none
-          cargo build-wasm
+        if: ${{ !inputs.wasm-artifact }}
+        uses: ./.github/actions/build-wasm
+        with:
+          package: ${{ env.PACKAGE }}
+          out-dir: wasm
 
       - name: Generate TypeScript bindings
         run: |
+          WASM=$(find wasm -name '*.wasm' | head -1)
+          echo "Generating bindings from ${WASM}"
           stellar contract bindings typescript \
-            --wasm target/wasm32v1-none/release/stellar_oracle_shield.wasm \
+            --wasm "${WASM}" \
             --output-dir sdk/typescript/packages/generated --overwrite
 
       - name: Set package metadata
