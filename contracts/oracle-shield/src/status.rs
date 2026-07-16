@@ -16,7 +16,7 @@ impl From<Score> for Status {
     fn from(score: Score) -> Status {
         const HEALTHY_THRESHOLD: u32 = 66;
         const DEGRADED_THRESHOLD: u32 = 33;
-        let score = score.get();
+        let score = score.score;
         if score >= HEALTHY_THRESHOLD {
             Self::Healthy
         } else if score >= DEGRADED_THRESHOLD {

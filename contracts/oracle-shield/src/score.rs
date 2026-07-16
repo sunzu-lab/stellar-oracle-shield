@@ -5,21 +5,20 @@ use {
 
 /// u32 with range check
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Score(u32);
+pub struct Score {
+    pub score: u32,
+    pub ts: u64,
+}
 
 impl Score {
     const MAX_SCORE: u32 = 100;
 
-    pub fn new(value: u32) -> Result<Self, Error> {
-        if value <= Self::MAX_SCORE {
-            Ok(Self(value))
+    pub fn new(score: u32, ts: u64) -> Result<Self, Error> {
+        if score <= Self::MAX_SCORE {
+            Ok(Self { score, ts })
         } else {
             Err(Error::ScoreBounds)
         }
-    }
-
-    pub fn get(self) -> u32 {
-        self.0
     }
 
     pub fn status(self) -> Status {
@@ -31,13 +30,13 @@ impl TryFromVal<Env, Val> for Score {
     type Error = Error;
 
     fn try_from_val(env: &Env, v: &Val) -> Result<Self, Self::Error> {
-        let i = u32::try_from_val(env, v).map_err(|_| Error::ConversionError)?;
-        Self::new(i)
+        let (s, ts) = <(u32, u64)>::try_from_val(env, v).map_err(|_| Error::ConversionError)?;
+        Self::new(s, ts)
     }
 }
 
 impl IntoVal<Env, Val> for Score {
     fn into_val(&self, e: &Env) -> Val {
-        self.get().into_val(e)
+        (self.score, self.ts).into_val(e)
     }
 }
