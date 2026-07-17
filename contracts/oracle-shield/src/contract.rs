@@ -51,7 +51,8 @@ impl Contract {
         if let Ok(old_score) = old_score {
             if old_score.status() != score.status() {
                 StatusChange {
-                    pair,
+                    base: pair.0,
+                    quote: pair.1,
                     status: score.into(),
                 }
                 .publish(&env)
@@ -101,7 +102,9 @@ impl Contract {
 )]
 pub struct StatusChange {
     #[topic]
-    pub pair: Pair,
+    pub base: Address,
+    #[topic]
+    pub quote: Address,
     pub status: Status,
 }
 

@@ -5,7 +5,7 @@ use {
     soroban_sdk::testutils::{
         Address as AddressTrait, AuthorizedFunction, AuthorizedInvocation, Events,
     },
-    soroban_sdk::{events::Event, Env, IntoVal, Symbol, Val, Vec},
+    soroban_sdk::{events::Event, vec, Env, IntoVal, Symbol, Val, Vec},
 };
 
 fn contract_auth_for(
@@ -201,18 +201,25 @@ fn test_event() {
     client.set_score(&base, &quote, &44_i32);
     let event = env.events().all().filter_by_contract(&contract_id);
     let expected = StatusChange {
-        pair: Pair(base.clone(), quote.clone()),
+        base: base.clone(),
+        quote: quote.clone(),
         status: Status::Degraded,
     };
 
     assert_eq!(event.events(), &[expected.to_xdr(&env, &contract_id)]);
 
     client.set_score(&base, &quote, &66_i32);
-    let event = env.events().all().filter_by_contract(&contract_id);
-    let expected = StatusChange {
-        pair: Pair(base, quote),
-        status: Status::Healthy,
-    };
+    let event = env.events().all();
 
-    assert_eq!(event.events(), &[expected.to_xdr(&env, &contract_id)]);
+    assert_eq!(
+        event,
+        vec![
+            &env,
+            (
+                contract_id,
+                (Symbol::new(&env, "HEALTH_CHANGED"), base, quote).into_val(&env),
+                Status::Healthy.into_val(&env)
+            )
+        ]
+    )
 }
