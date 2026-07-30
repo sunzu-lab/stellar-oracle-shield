@@ -1,7 +1,7 @@
 use {
     crate::{error::Error, score::Score, status::Status},
     soroban_sdk::{
-        Address, Env, contract, contractevent, contractimpl, contractmeta, contracttype,
+        Address, BytesN, Env, contract, contractevent, contractimpl, contractmeta, contracttype,
     },
 };
 
@@ -123,6 +123,13 @@ impl Contract {
     pub fn get_status(env: Env, base: Address, quote: Address) -> Result<Status, Error> {
         let score = Self::get_inner_score(&env, &Pair(base, quote))?;
         Ok(score.into())
+    }
+
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
 
