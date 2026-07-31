@@ -1,17 +1,17 @@
 #!/bin/bash
 
-## helper - deploy current built wasm with alias `oracle_shield`
+## helper - upgrade current built wasm with alias `oracle_shield`
 ##
 ## USAGE
 ##
-##   deploy [NETWORK] SOURCE_ACCOUNT
+##   upgrade [NETWORK] SOURCE_ACCOUNT
 ##
 ##   NETWORK         any of testnet, mainnet and futurenet. Default, env STELLAR_NETWORK
 ##   SOURCE_ACCOUNT  any account identifier
 ##
 ## EXAMPLE
 ##
-##   ./deploy alice
+##   ./upgrade alice
 
 contract_name="stellar_oracle_shield"
 
@@ -29,7 +29,7 @@ if [ -z $source_account ]; then
     exit
 fi
 
-source_address=$(stellar keys address ${source_account})
+source_address=$(stellar keys public-key ${source_account})
 
 echo "${source_account}[${source_address}] updating wasm ${contract_name}"
 
