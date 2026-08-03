@@ -36,6 +36,13 @@ impl Contract {
         );
     }
 
+    /// retrieve version of the contract
+    ///
+    /// return the version
+    pub fn version() -> u32 {
+        1
+    }
+
     /// set max staleness for all pairs score
     /// `max staleness` - u64 seconds
     ///
@@ -125,6 +132,10 @@ impl Contract {
         Ok(score.into())
     }
 
+    /// upgrade the contract with the new one
+    /// `new_wasm_hash` - hash of the new wasm
+    ///
+    /// restricted to admin
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
