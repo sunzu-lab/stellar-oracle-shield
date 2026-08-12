@@ -1,4 +1,4 @@
-# Oracle Shield — minimal web example
+# Oracle Shield - minimal web example
 
 ## 1. Authenticate to GitHub Packages
 
@@ -22,8 +22,7 @@ npm run dev
 Open the Website
 ## 3. Reading: `get_status` and `get_score`
 
-These are **two independent** read-only functions on the same pair. Call
-whichever you need — you don't have to call both:
+These are two read-only functions. Call whichever you need, you don't have to call both:
 
 - `get_status` → the **verdict**: `Healthy` / `Degraded` / `Unsafe`.
 - `get_score` → the **raw number** `0–100`.
@@ -95,7 +94,7 @@ against.
 
 - Needs a contract **already deployed** on the target network, and the pair must
   be **covered** by the oracle (otherwise it returns `PairNotCovered`).
-- For mainnet, use `rpcUrl: "https://mainnet.sorobanrpc.com"` and
+- For mainnet, use `rpcUrl: "https://rpc.lightsail.network"` and
   `networkPassphrase: "Public Global Stellar Network ; September 2015"`.
 - The SDK depends on `@stellar/stellar-sdk`; a bundler (here Vite) handles the
   browser build for you.
