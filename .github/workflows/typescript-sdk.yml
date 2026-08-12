@@ -19,9 +19,7 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,13 +31,16 @@ jobs:
     runs-on: ubuntu-latest
     # Real publishes need the protected environment's approval; dry-runs don't.
     environment: ${{ inputs.publish && 'release' || 'dry-run' }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # Only useful when we compile the WASM ourselves.
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: ${{ !inputs.wasm-artifact }}
 
       - name: Resolve owner scope
