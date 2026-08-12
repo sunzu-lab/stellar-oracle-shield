@@ -78,19 +78,18 @@ await tx.signAndSend();                            // wallet prompts to approve
 ## Generating the client yourself (from a live contract)
 
 Instead of depending on the published package (steps 1–2), a downstream
-integrator can generate the same client straight from **any deployed contract**
-— no token, no npm scope needed:
+integrator can generate the same client straight from any deployed contract, no token, no npm scope needed:
 
 ```bash
-# Reads the contract interface directly from chain:
-stellar contract bindings typescript \
+# Reads the contract interface directly from chain
+npx @stellar/stellar-sdk@16.2.0 generate \
   --contract-id C... \
   --network testnet \
   --output-dir src/oracle-shield-sdk --overwrite
 ```
 
-The generated `Client` is identical to the published one. Point it at whichever contract and network you
-integrate against.
+The generated `Client` is identical to the published one. Point it at whichever contract and network you integrate
+against.
 
 ## Notes
 
