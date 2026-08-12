@@ -22,6 +22,12 @@ pub struct Pair(Address, Address);
 #[contract]
 pub struct Contract;
 
+const VERSION: (u32, u32, u32) = (
+    parse_version(env!("CARGO_PKG_VERSION_MAJOR")),
+    parse_version(env!("CARGO_PKG_VERSION_MINOR")),
+    parse_version(env!("CARGO_PKG_VERSION_PATCH")),
+);
+
 #[contractimpl]
 impl Contract {
     /// initialze contract
@@ -39,8 +45,8 @@ impl Contract {
     /// retrieve version of the contract
     ///
     /// return the version
-    pub fn version() -> u32 {
-        1
+    pub fn version() -> (u32, u32, u32) {
+        VERSION
     }
 
     /// set max staleness for all pairs score
@@ -151,6 +157,13 @@ pub struct StatusChange {
     #[topic]
     pub quote: Address,
     pub status: Status,
+}
+
+const fn parse_version(s: &str) -> u32 {
+    match u32::from_str_radix(s, 10) {
+        Ok(v) => v,
+        Err(_) => panic!("invalid version number"),
+    }
 }
 
 mod tests;
