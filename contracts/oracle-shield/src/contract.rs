@@ -5,7 +5,10 @@ use {
     },
 };
 
-contractmeta!(key = "Description", val = "sunzu lab oracle shield");
+contractmeta!(key = "name", val = env!("CARGO_PKG_NAME"));
+contractmeta!(key = "version", val = env!("CARGO_PKG_VERSION"));
+contractmeta!(key = "description", val = env!("CARGO_PKG_DESCRIPTION"));
+contractmeta!(key = "license", val = env!("CARGO_PKG_LICENSE"));
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]

@@ -2,6 +2,8 @@
 name = "stellar-oracle-shield"
 version = "0.1.0"
 authors = ["Sun Zu Lab <contact@sunzulab.com>"]
+description = "sunzu lab oracle shield"
+repository = "https://github.com/sunzu-lab/stellar-oracle-shield"
 license = "Apache-2.0"
 edition = "2024"
 publish = false
