@@ -124,7 +124,7 @@ jobs:
     needs: release
     permissions:
       contents: read
-      packages: write
+      id-token: write
     uses: ./.github/workflows/rust-sdk.yml
 
   # publish the typescript sdk

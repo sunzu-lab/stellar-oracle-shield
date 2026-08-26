@@ -48,7 +48,7 @@ runs:
         if [ "${IN_WASM}" != "${OUT_WASM}" ]; then
           mv "${IN_WASM}" "${OUT_WASM}"
         fi
-        
+
         # Mainnet caps contracts at 128 KiB; fail at half that, before it hurts.
         SIZE=$(stat -c %s "${OUT_WASM}")
         echo "${OUT_WASM}: ${SIZE} bytes"

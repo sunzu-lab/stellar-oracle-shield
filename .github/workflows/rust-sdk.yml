@@ -65,8 +65,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG_VERSION="${REF_NAME}"
-          TAG_VERSION="${VERSION#v}"
+          TAG_VERSION="${GITHUB_REF_NAME}"
+          TAG_VERSION="${TAG_VERSION#v}"
 
           CRATE_VERSION="$(
             cargo metadata \

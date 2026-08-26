@@ -45,6 +45,8 @@ jobs:
 
       - name: Resolve owner scope
         run: |
+          set -euo pipefail
+
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "SCOPE=@${OWNER}" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=@${OWNER}/oracle-shield-ts-sdk" >> "$GITHUB_ENV"
@@ -54,7 +56,9 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          CRATE_VERSION=$(grep -m1 '^version = ' contracts/oracle-shield/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          set -euo pipefail
+
+          CRATE_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
           if [ "${{ inputs.publish }}" = "true" ]; then
             DRY_RUN=false
             VERSION="${INPUT_VERSION}"
@@ -95,6 +99,8 @@ jobs:
 
       - name: Generate TypeScript bindings
         run: |
+          set -euo pipefail
+
           WASM=$(find wasm -name '*.wasm' | head -1)
           echo "Generating bindings from ${WASM}"
           npx @stellar/stellar-sdk@16.2.0 generate \
@@ -106,6 +112,8 @@ jobs:
       - name: Set package metadata
         working-directory: sdk/typescript/packages/generated
         run: |
+          set -euo pipefail
+
           npm pkg set name="${PACKAGE_NAME}"
           npm pkg set version="${VERSION}"
           npm pkg set repository.type="git"
@@ -124,6 +132,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: | # zizmor: ignore[use-trusted-publishing]
+          set -euo pipefail
+
           if [ "${DRY_RUN}" = "true" ]; then
             echo "Manual run → validation only (dry-run), nothing is published."
             npm publish --dry-run
