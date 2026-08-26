@@ -106,22 +106,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if gh release view "${REF_NAME}" >/dev/null 2>&1; then
-            gh release edit "${REF_NAME}" \
-              --title "${REF_NAME}" \
-              --notes-file notes.md
-
-            gh release upload "${REF_NAME}" \
-              "out/${WASM}" \
-              "out/${WASM}.sha256"
-          else
-            gh release create "${REF_NAME}" \
-              "out/${WASM}" \
-              "out/${WASM}.sha256" \
-              --title "${REF_NAME}" \
-              --notes-file notes.md \
-              --verify-tag
-          fi
+          gh release create "${REF_NAME}" \
+            "out/${WASM}" \
+            "out/${WASM}.sha256" \
+            --title "${REF_NAME}" \
+            --notes-file notes.md \
+            --verify-tag
 
       - name: Send release info to stellar.expert
         continue-on-error: true
