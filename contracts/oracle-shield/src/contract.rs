@@ -57,17 +57,10 @@ impl Contract {
         }
     }
 
-    /// retrieve version of the contract
-    ///
-    /// returns the version (major, minor, patch)
     fn version() -> (u32, u32, u32) {
         VERSION
     }
 
-    /// set max staleness for all pairs score
-    /// `max staleness` - u64 seconds
-    ///
-    /// restricted to admin
     fn set_max_staleness(env: Env, max_staleness: u64) -> Result<(), Error> {
         let admin = Self::get_admin(&env)?;
         admin.require_auth();
@@ -77,10 +70,6 @@ impl Contract {
         Ok(())
     }
 
-    /// set operator address
-    /// `operator_key` - Address
-    ///
-    /// restricted to admin
     fn set_operator_key(env: Env, operator_key: Address) -> Result<(), Error> {
         let admin = Self::get_admin(&env)?;
         admin.require_auth();
@@ -104,12 +93,6 @@ impl Contract {
             .ok_or(Error::MissingOperator)
     }
 
-    /// set score of a pair
-    /// `base` - SAC address of an asset
-    /// `quote` - SAC address of an asset
-    /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
-    ///
-    /// restricted to operator
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error> {
         let operator = Self::get_operator(&env)?;
         operator.require_auth();
@@ -150,27 +133,11 @@ impl Contract {
             })
     }
 
-    /// get score of a pair
-    /// `base` - SAC address of an asset
-    /// `quote` - SAC address of an asset
-    ///
-    /// return the score
-    /// fails if
-    /// - pair is not covered
-    /// - input for pair is stale (unreliable score)
     fn get_score(env: Env, base: Address, quote: Address) -> Result<u32, Error> {
         let score = Self::get_inner_score(&env, &Pair(base, quote))?;
         Ok(score.score)
     }
 
-    /// get health status of a pair
-    /// `base` - SAC address of an asset
-    /// `quote` - SAC address of an asset
-    ///
-    /// return the score
-    /// fails if
-    /// - pair is not covered
-    /// - input for pair is stale (unreliable score)
     fn get_status(env: Env, base: Address, quote: Address) -> Result<Status, Error> {
         let score = Self::get_inner_score(&env, &Pair(base, quote))?;
         Ok(score.into())
@@ -206,26 +173,59 @@ const fn parse_version(s: &str) -> u32 {
 
 #[contractimpl]
 impl stellar_oracle_shield_client::Contract for Contract {
+    /// set max staleness for all pairs score
+    /// `max staleness` - u64 seconds
+    ///
+    /// restricted to admin
     fn set_max_staleness(env: Env, max_staleness: u64) -> Result<(), Error> {
         Contract::set_max_staleness(env, max_staleness)
     }
 
+    /// set operator address
+    /// `operator_key` - Address
+    ///
+    /// restricted to admin
     fn set_operator_key(env: Env, operator_key: Address) -> Result<(), Error> {
         Contract::set_operator_key(env, operator_key)
     }
 
+    /// set score of a pair
+    /// `base` - SAC address of an asset
+    /// `quote` - SAC address of an asset
+    /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
+    ///
+    /// restricted to operator
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error> {
         Contract::set_score(env, base, quote, score)
     }
 
+    /// get score of a pair
+    /// `base` - SAC address of an asset
+    /// `quote` - SAC address of an asset
+    ///
+    /// return the score
+    /// fails if
+    /// - pair is not covered
+    /// - input for pair is stale (unreliable score)
     fn get_score(env: Env, base: Address, quote: Address) -> Result<u32, Error> {
         Contract::get_score(env, base, quote)
     }
 
+    /// get health status of a pair
+    /// `base` - SAC address of an asset
+    /// `quote` - SAC address of an asset
+    ///
+    /// return the score
+    /// fails if
+    /// - pair is not covered
+    /// - input for pair is stale (unreliable score)
     fn get_status(env: Env, base: Address, quote: Address) -> Result<Status, Error> {
         Contract::get_status(env, base, quote)
     }
 
+    /// retrieve version of the contract
+    ///
+    /// returns the version (major, minor, patch)
     fn version() -> (u32, u32, u32) {
         Contract::version()
     }

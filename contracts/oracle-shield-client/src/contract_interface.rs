@@ -23,7 +23,7 @@ pub trait Contract {
     /// `quote` - SAC address of an asset
     /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
     ///
-    /// restricted to admin
+    /// restricted to operator
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error>;
 
     /// get score of a pair
