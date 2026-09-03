@@ -415,5 +415,6 @@ docs/                              # Generated SDK/API documentation
 
 * [`contracts/oracle-shield-client/README.md`](contracts/oracle-shield-client/README.md) — on-chain Rust integration example
 * [`contracts/oracle-shield-client-example/`](contracts/oracle-shield-client-example/) — working example contract
+* [Threat Model](THREAT_MODEL.md)
 * [Rust client API documentation](https://docs.rs/stellar-oracle-shield-client)
 * [Stellar smart contract documentation](https://developers.stellar.org/docs/build/smart-contracts)
