@@ -6,19 +6,34 @@ const NETWORK = {
 
 const $ = (id) => document.getElementById(id);
 
-const Mode = Object.freeze({ GET: "get", SET: "set" });
+const Mode = Object.freeze({ GET: "get", SUBSCRIBE: "subscribe", SET: "set" });
 let mode = Mode.GET;
+let subscriptionId = 0;
+
+const sleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function stopSubscription(message) {
+  subscriptionId += 1;
+  if (message) $("out").textContent = message;
+}
 
 function setMode(next) {
+  if (mode === Mode.SUBSCRIBE && next !== Mode.SUBSCRIBE) {
+    stopSubscription();
+  }
   mode = next;
   $("modeGet").classList.toggle("active", mode === Mode.GET);
+  $("modeSubscribe").classList.toggle("active", mode === Mode.SUBSCRIBE);
   $("modeSet").classList.toggle("active", mode === Mode.SET);
   $("setFields").hidden = mode !== Mode.SET;
-  $("run").textContent = mode === Mode.GET ? "Query" : "Submit";
+  $("run").textContent =
+    mode === Mode.GET ? "Query" : mode === Mode.SUBSCRIBE ? "Subscribe" : "Submit";
   $("out").textContent = "Result appears here…"; 
 }
 
 $("modeGet").addEventListener("click", () => setMode(Mode.GET));
+$("modeSubscribe").addEventListener("click", () => setMode(Mode.SUBSCRIBE));
 $("modeSet").addEventListener("click", () => setMode(Mode.SET));
 
 let kit = null;
@@ -34,6 +49,49 @@ async function getKit() {
 
   kit = StellarWalletsKit;
   return kit;
+}
+
+async function subscribeToStatusChanges(contractId, pair, out) {
+  const { rpc, scValToNative } = await import("@stellar/stellar-sdk");
+  const server = new rpc.Server(NETWORK.rpcUrl);
+  const latestLedger = await server.getLatestLedger();
+  const id = ++subscriptionId;
+  let cursor;
+
+  out.textContent = `Listening from ledger ${latestLedger.sequence}…`;
+  $("run").textContent = "Stop subscription";
+  $("run").disabled = false;
+
+  while (id === subscriptionId) {
+    const request = {
+      filters: [{ type: "contract", contractIds: [contractId] }],
+      limit: 100,
+      ...(cursor ? { cursor } : { startLedger: latestLedger.sequence }),
+    };
+    const response = await server.getEvents(request);
+    cursor = response.cursor;
+
+    for (const event of response.events) {
+      const topics = event.topic.map(scValToNative);
+      const [name, base, quote] = topics;
+
+      if (name !== "status_change" || base !== pair.base || quote !== pair.quote) {
+        continue;
+      }
+
+      const decodedStatus = scValToNative(event.value);
+      const notification = {
+        status: decodedStatus?.tag ?? (Array.isArray(decodedStatus) ? decodedStatus[0] : decodedStatus),
+        ledger: event.ledger,
+        ledgerClosedAt: event.ledgerClosedAt,
+        txHash: event.txHash,
+      };
+      out.textContent += `\n\n${JSON.stringify(notification, null, 2)}`;
+      out.scrollTop = out.scrollHeight;
+    }
+
+    await sleep(5000);
+  }
 }
 
 $("connect").addEventListener("click", async () => {
@@ -58,14 +116,19 @@ $("run").addEventListener("click", async () => {
     return;
   }
 
+  if (mode === Mode.SUBSCRIBE && $("run").textContent === "Stop subscription") {
+    stopSubscription("Subscription stopped.");
+    $("run").textContent = "Subscribe";
+    return;
+  }
+
   $("run").disabled = true;
 
   try {
-    const { Client } = await import("@sunzulab/oracle-shield-ts-sdk");
-
     if (mode === Mode.GET) {
       out.textContent = "Querying…";
 
+      const { Client } = await import("@sunzu-lab/oracle-shield-ts-sdk");
       const client = new Client({
         contractId,
         rpcUrl: NETWORK.rpcUrl,
@@ -83,6 +146,8 @@ $("run").addEventListener("click", async () => {
         2,
       );
 
+    } else if (mode === Mode.SUBSCRIBE) {
+      await subscribeToStatusChanges(contractId, pair, out);
     } else {
       if (!walletAddress) {
         out.textContent = "Connect a wallet first.";
@@ -100,6 +165,7 @@ $("run").addEventListener("click", async () => {
       out.textContent = "Waiting for wallet signature…";
 
       const k = await getKit();
+      const { Client } = await import("@sunzu-lab/oracle-shield-ts-sdk");
       const client = new Client({
         contractId,
         rpcUrl: NETWORK.rpcUrl,
@@ -119,6 +185,10 @@ $("run").addEventListener("click", async () => {
   } catch (e) {
     out.textContent = "Error: " + (e?.message ?? e);
   } finally {
+    if (mode === Mode.SUBSCRIBE) {
+      stopSubscription();
+      $("run").textContent = "Subscribe";
+    }
     $("run").disabled = false;
   }
 });

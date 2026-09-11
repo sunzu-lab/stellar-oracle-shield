@@ -26,22 +26,23 @@
 
     <div class="modes">
       <button class="mode active" id="modeGet">Get</button>
+      <button class="mode" id="modeSubscribe">Subscribe Status Change</button>
       <button class="mode" id="modeSet">Set</button>
     </div>
 
     <!-- shared fields -->
     <label for="contract">Contract ID</label>
-    <input id="contract" value="CAU23HVBMCOEPE34KBRO7ABJIVIYX7JWCLVU4GIR7I4LPUZOEN66QQUG" />
+    <input id="contract" value="CCMSDPGXS3VMCQCGUJDIEY6UPJUGO5GBPWWKIWZUPZA7GWRWKIITYE7P" />
 
     <label for="base">Base asset (SAC address)</label>
-    <input id="base" value="CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" />
+    <input id="base" value="CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA" />
 
     <label for="quote">Quote asset (SAC address)</label>
-    <input id="quote" value="GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" />
+    <input id="quote" value="CAO7DDJNGMOYQPRYDY5JVZ5YEK4UQBSMGLAEWRCUOTRMDSBMGWSAATDZ" />
     <!-- -->
     <!-- only shown in Set mode -->
     <div id="setFields" hidden>
-      <label>Wallet (must be the contract admin)</label>
+      <label>Wallet (must be the configured operator)</label>
       <button type="button" id="connect">Connect wallet</button>
       <div id="walletAddr" style="font-size:11px;color:#555;margin-top:6px;word-break:break-all;">Not connected</div>
 
