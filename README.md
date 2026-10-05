@@ -82,15 +82,15 @@ The administrator is configured when the contract is deployed.
 
 The administrator can:
 
-* set the operator address with `set_operator_key`;
+* set allowed operators address with `set_operators`;
 * change the global maximum score age with `set_max_staleness`;
 * upgrade the contract WASM.
 
-### Operator
+### Operators
 
-The operator is the account authorized to publish health scores using `set_score`.
+Operators are accounts authorized to publish health scores using `set_score_from`.
 
-The operator does **not** control protocol decisions. It only supplies the health score consumed by the contract.
+Operators do **not** control protocol decisions. It only supplies the health score consumed by the contract.
 
 ### Protocol users
 
@@ -106,13 +106,20 @@ get_score(base, quote)  -> Result<u32, Error>
 version()                -> (u32, u32, u32)
 ```
 
-Administrative/operator functions are:
+Administrative functions are:
 
 ```text
-set_score(base, quote, score)
-set_operator_key(operator_key)
+set_operators(operator)
+add_operator(operator)
+remove_operator(operator)
 set_max_staleness(max_staleness)
 upgrade(new_wasm_hash)
+```
+
+Operator functions are:
+
+```text
+set_score_from(operator, base, quote, score)
 ```
 
 `base` and `quote` are Stellar Asset Contract (SAC) addresses.
@@ -213,8 +220,8 @@ Configure the operator:
 
 ```bash
 ./invoke testnet alice \
-  set_operator_key \
-  --operator_key <OPERATOR_ADDRESS>
+  add_operator \
+  --operator <OPERATOR_ADDRESS>
 ```
 
 Optionally change the default maximum staleness:
@@ -235,7 +242,8 @@ Assuming a Stellar CLI identity named `operator` owns the configured operator ad
 
 ```bash
 ./invoke testnet operator \
-  set_score \
+  set_score_from \
+  --operator <OPERATOR_ADDRESS>
   --base <BASE_SAC_ADDRESS> \
   --quote <QUOTE_SAC_ADDRESS> \
   --score 82
@@ -347,15 +355,15 @@ The safest default is also to reject or restrict the operation if the Shield cal
 
 The contract currently defines the following errors:
 
-| Code | Error               | Meaning                                                                 |
-| ---: | ------------------- | ----------------------------------------------------------------------- |
-|  701 | `MissingAdmin`      | Administrator configuration is missing.                                 |
-|  702 | `ScoreBounds`       | A score outside the 0–100 range was supplied.                           |
-|  703 | `PairNotCovered`    | No usable score exists for the requested pair.                          |
-|  704 | `StaleInput`        | The pair's latest score is older than the configured maximum staleness. |
-|  705 | `ConversionError`   | Internal value conversion failed.                                       |
-|  706 | `NoMaxStalenessSet` | Maximum staleness configuration is missing.                             |
-|  707 | `MissingOperator`   | No operator has been configured.                                        |
+| Code | Error                  | Meaning                                                                 |
+| ---: | ---------------------- | ----------------------------------------------------------------------- |
+|  701 | `MissingAdmin`         | Administrator configuration is missing.                                 |
+|  702 | `ScoreBounds`          | A score outside the 0–100 range was supplied.                           |
+|  703 | `PairNotCovered`       | No usable score exists for the requested pair.                          |
+|  704 | `StaleInput`           | The pair's latest score is older than the configured maximum staleness. |
+|  705 | `ConversionError`      | Internal value conversion failed.                                       |
+|  706 | `NoMaxStalenessSet`    | Maximum staleness configuration is missing.                             |
+|  707 | `UnauthorizedOperator` | Operator is not registered                                              |
 
 For integrations guarding financial operations, `PairNotCovered` and `StaleInput` should normally be handled conservatively rather than ignored.
 

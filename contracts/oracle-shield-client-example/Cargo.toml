@@ -15,8 +15,9 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { version = "26" }
-# for your own contracts, use officially published crate
 stellar-oracle-shield-client  = { workspace = true }
+# for your own contracts, use officially published crate instead
+#stellar-oracle-shield-client  = { version = "0.2.0" }
 
 
 [dev-dependencies]
