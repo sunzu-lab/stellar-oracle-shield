@@ -4,6 +4,7 @@ use soroban_sdk::contracterror;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
+#[non_exhaustive]
 pub enum Error {
     /// admin is not set - unlikely
     MissingAdmin = 701,
@@ -17,6 +18,6 @@ pub enum Error {
     ConversionError = 705,
     /// max staleness not set (shouldn't happen)
     NoMaxStalenessSet = 706,
-    /// operator key is not set
-    MissingOperator = 707,
+    /// operator is not registered
+    UnauthorizedOperator = 707,
 }

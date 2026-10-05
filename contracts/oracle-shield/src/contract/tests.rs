@@ -28,13 +28,22 @@ fn contract_auth_for(
     )
 }
 
-fn c_client(env: &Env) -> ContractClient<'_> {
+fn build_contract_client(env: &Env) -> (ContractClient<'_>, Address, Address, Address) {
     let admin_address = Address::generate(&env);
     let operator_address = Address::generate(&env);
-    let constructor_args = (&admin_address, 60_u64, Some(operator_address));
-    let contract_id = env.register(Contract, constructor_args.clone());
+    let constructor_args = (
+        admin_address.clone(),
+        60_u64,
+        Some(vec![env, operator_address.clone()]),
+    );
+    let contract_id = env.register(Contract, constructor_args);
 
-    ContractClient::new(&env, &contract_id)
+    (
+        ContractClient::new(&env, &contract_id),
+        contract_id,
+        operator_address,
+        admin_address,
+    )
 }
 
 fn xlm_address(env: &Env) -> Address {
@@ -58,7 +67,11 @@ fn test_constructor() {
 
     let admin_address = Address::generate(&env);
     let operator_address = Address::generate(&env);
-    let constructor_args = (&admin_address, 60_u64, Some(&operator_address));
+    let constructor_args = (
+        admin_address.clone(),
+        60_u64,
+        Some(vec![&env, operator_address]),
+    );
     let contract_id = env.register(Contract, constructor_args.clone());
     assert_eq!(
         env.auths(),
@@ -77,13 +90,7 @@ fn test_set_score() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin_address = Address::generate(&env);
-    let operator_address = Address::generate(&env);
-    let constructor_args = (&admin_address, 60_u64, Some(&operator_address));
-
-    let contract_id = env.register(Contract, constructor_args.clone());
-
-    let client = ContractClient::new(&env, &contract_id);
+    let (client, contract_id, operator_address, _) = build_contract_client(&env);
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
@@ -106,20 +113,171 @@ fn test_set_score() {
 }
 
 #[test]
+fn test_set_score_from() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, contract_id, operator_address, _) = build_contract_client(&env);
+    let base = usdc_circle_address(&env);
+    let quote = xlm_address(&env);
+
+    client.set_score_from(&operator_address, &base, &quote, &12_u32);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            operator_address.clone(),
+            contract_id.clone(),
+            "set_score_from",
+            (
+                operator_address.clone(),
+                base.clone(),
+                quote.clone(),
+                12_u32,
+            )
+        )]
+    );
+
+    assert_eq!(client.get_score(&base, &quote), 12);
+
+    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12345678_u32);
+    assert_eq!(ret, Err(Ok(Error::ScoreBounds)));
+}
+
+#[test]
+fn test_set_score_from_unauthorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let operator_address = Address::generate(&env);
+    let (client, _, _, _) = build_contract_client(&env);
+    let base = usdc_circle_address(&env);
+    let quote = xlm_address(&env);
+
+    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12_u32);
+    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
+}
+
+#[test]
+fn test_add_operator() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let operator_address = Address::generate(&env);
+    let (client, contract_id, _, admin_address) = build_contract_client(&env);
+    let base = usdc_circle_address(&env);
+    let quote = xlm_address(&env);
+
+    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12_u32);
+    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
+
+    client.add_operator(&operator_address);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            admin_address.clone(),
+            contract_id.clone(),
+            "add_operator",
+            (operator_address.clone(),)
+        )]
+    );
+
+    let ret = client.try_set_score_from(&operator_address, &base, &quote, &13_u32);
+    assert_eq!(ret, Ok(Ok(())));
+}
+
+#[test]
+fn test_remove_operator() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, contract_id, operator_address, admin_address) = build_contract_client(&env);
+    let base = usdc_circle_address(&env);
+    let quote = xlm_address(&env);
+
+    client.add_operator(&operator_address);
+
+    let ret = client.try_set_score_from(&operator_address, &base, &quote, &13_u32);
+    assert_eq!(ret, Ok(Ok(())));
+
+    client.remove_operator(&operator_address);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            admin_address.clone(),
+            contract_id.clone(),
+            "remove_operator",
+            (operator_address.clone(),)
+        )]
+    );
+
+    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12_u32);
+    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
+}
+
+#[test]
+fn test_set_operators() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let operator2_address = Address::generate(&env);
+    let operator3_address = Address::generate(&env);
+    let (client, contract_id, operator1_address, admin_address) = build_contract_client(&env);
+    let base = usdc_circle_address(&env);
+    let quote = xlm_address(&env);
+
+    client.add_operator(&operator1_address);
+
+    let ret = client.try_set_score_from(&operator1_address, &base, &quote, &12_u32);
+    assert_eq!(ret, Ok(Ok(())));
+    let ret = client.try_set_score_from(&operator2_address, &base, &quote, &13_u32);
+    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
+    let ret = client.try_set_score_from(&operator3_address, &base, &quote, &13_u32);
+    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
+
+    let operators = vec![
+        &env,
+        operator2_address.clone(),
+        operator2_address.clone(),
+        operator3_address.clone(),
+    ];
+    client.set_operators(&operators);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            admin_address.clone(),
+            contract_id.clone(),
+            "set_operators",
+            (operators,)
+        )]
+    );
+
+    let ret = client.try_set_score_from(&operator1_address, &base, &quote, &12_u32);
+    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
+    let ret = client.try_set_score_from(&operator2_address, &base, &quote, &13_u32);
+    assert_eq!(ret, Ok(Ok(())));
+    let ret = client.try_set_score_from(&operator3_address, &base, &quote, &13_u32);
+    assert_eq!(ret, Ok(Ok(())));
+}
+
+#[test]
 fn test_set_operator() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin_address = Address::generate(&env);
     let operator_address = Address::generate(&env);
-    let constructor_args: (&Address, u64, Option<Address>) = (&admin_address, 60_u64, None);
-
-    let contract_id = env.register(Contract, constructor_args.clone());
-    let client = ContractClient::new(&env, &contract_id);
+    let (client, contract_id, _, admin_address) = build_contract_client(&env);
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    assert!(client.try_set_score(&base, &quote, &12_u32).is_err());
+    assert!(
+        client
+            .try_set_score_from(&operator_address, &base, &quote, &12_u32)
+            .is_err()
+    );
 
     assert_eq!(env.auths(), []);
 
@@ -135,7 +293,11 @@ fn test_set_operator() {
             (operator_address.clone(),)
         )]
     );
-    assert!(client.try_set_score(&base, &quote, &12_u32).is_ok());
+    assert!(
+        client
+            .try_set_score_from(&operator_address, &base, &quote, &12_u32)
+            .is_ok()
+    );
 
     assert_eq!(
         env.auths(),
@@ -143,8 +305,8 @@ fn test_set_operator() {
             &env,
             operator_address.clone(),
             contract_id.clone(),
-            "set_score",
-            (&base, &quote, &12_u32,)
+            "set_score_from",
+            (&operator_address, &base, &quote, &12_u32,)
         )]
     );
 }
@@ -154,7 +316,7 @@ fn test_get_score() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let client = c_client(&env);
+    let (client, _, operator_address, _) = build_contract_client(&env);
 
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
@@ -164,7 +326,7 @@ fn test_get_score() {
     );
     assert!(env.auths().is_empty());
 
-    client.set_score(&base, &quote, &12_u32);
+    client.set_score_from(&operator_address, &base, &quote, &12_u32);
 
     assert_eq!(client.get_score(&base, &quote), 12);
     assert!(env.auths().is_empty());
@@ -180,7 +342,7 @@ fn test_get_status() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let client = c_client(&env);
+    let (client, _, operator_address, _) = build_contract_client(&env);
 
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
@@ -190,22 +352,22 @@ fn test_get_status() {
     );
     assert!(env.auths().is_empty());
 
-    client.set_score(&base, &quote, &0_u32);
+    client.set_score_from(&operator_address, &base, &quote, &0_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Unsafe);
 
-    client.set_score(&base, &quote, &32_u32);
+    client.set_score_from(&operator_address, &base, &quote, &32_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Unsafe);
 
-    client.set_score(&base, &quote, &33_u32);
+    client.set_score_from(&operator_address, &base, &quote, &33_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Degraded);
 
     client.set_score(&base, &quote, &65_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Degraded);
 
-    client.set_score(&base, &quote, &66_u32);
+    client.set_score_from(&operator_address, &base, &quote, &66_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Healthy);
 
-    client.set_score(&base, &quote, &100_u32);
+    client.set_score_from(&operator_address, &base, &quote, &100_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Healthy);
 
     assert_eq!(
@@ -219,13 +381,13 @@ fn test_event() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let client = c_client(&env);
+    let (client, _, operator_address, _) = build_contract_client(&env);
     let contract_id = client.address.clone();
 
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    client.set_score(&base, &quote, &0_u32);
+    client.set_score_from(&operator_address, &base, &quote, &0_u32);
     assert!(
         env.events()
             .all()
@@ -234,7 +396,7 @@ fn test_event() {
             .is_empty()
     );
 
-    client.set_score(&base, &quote, &10_u32);
+    client.set_score_from(&operator_address, &base, &quote, &10_u32);
     assert!(
         env.events()
             .all()
@@ -243,7 +405,7 @@ fn test_event() {
             .is_empty()
     );
 
-    client.set_score(&base, &quote, &44_u32);
+    client.set_score_from(&operator_address, &base, &quote, &44_u32);
     let event = env.events().all().filter_by_contract(&contract_id);
     let expected = StatusChange {
         base: base.clone(),
@@ -253,7 +415,7 @@ fn test_event() {
 
     assert_eq!(event.events(), &[expected.to_xdr(&env, &contract_id)]);
 
-    client.set_score(&base, &quote, &66_u32);
+    client.set_score_from(&operator_address, &base, &quote, &66_u32);
     let event = env.events().all();
 
     assert_eq!(
@@ -274,7 +436,7 @@ fn test_max_staleness() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let client = c_client(&env);
+    let (client, _, operator_address, _) = build_contract_client(&env);
     let contract_id = client.address.clone();
 
     let val: Option<u64> = env.as_contract(&contract_id, || {
@@ -291,7 +453,7 @@ fn test_max_staleness() {
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    client.set_score(&base, &quote, &12_u32);
+    client.set_score_from(&operator_address, &base, &quote, &12_u32);
     assert_eq!(client.get_score(&base, &quote), 12);
 
     env.ledger().with_mut(|ledger| {
@@ -310,6 +472,6 @@ fn test_max_staleness() {
     env.ledger().with_mut(|ledger| {
         ledger.timestamp += 2;
     });
-    client.set_score(&base, &quote, &12_u32);
+    client.set_score_from(&operator_address, &base, &quote, &12_u32);
     assert_eq!(client.get_score(&base, &quote), 12);
 }

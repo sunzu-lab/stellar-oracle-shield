@@ -1,4 +1,8 @@
-use {super::*, soroban_sdk::Env, soroban_sdk::testutils::Address as AddressTrait};
+use {
+    super::*,
+    soroban_sdk::testutils::Address as AddressTrait,
+    soroban_sdk::{Env, Vec},
+};
 
 fn xlm_address(env: &Env) -> Address {
     Address::from_str(
@@ -14,13 +18,19 @@ fn usdc_circle_address(env: &Env) -> Address {
     )
 }
 
-fn shield_contract_client(env: &Env) -> (Address, stellar_oracle_shield::ContractClient<'_>) {
+fn shield_contract_client(
+    env: &Env,
+) -> (Address, Address, stellar_oracle_shield::ContractClient<'_>) {
     let admin_address = Address::generate(&env);
-    let constructor_args = (&admin_address, 60_u64, Some(&admin_address));
-    let contract_id = env.register(stellar_oracle_shield::Contract, constructor_args.clone());
+    let operator_address = Address::generate(&env);
+    let mut operators = Vec::new(env);
+    operators.push_back(operator_address.clone());
+    let constructor_args = (admin_address, 60_u64, Some(operators));
+    let contract_id = env.register(stellar_oracle_shield::Contract, constructor_args);
 
     (
         contract_id.clone(),
+        operator_address,
         stellar_oracle_shield::ContractClient::new(&env, &contract_id),
     )
 }
@@ -39,12 +49,13 @@ fn test_get_status() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (shield_contract_address, shield_client) = shield_contract_client(&env);
+    let (shield_contract_address, authorized_operator_address, shield_client) =
+        shield_contract_client(&env);
 
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    shield_client.set_score(&base, &quote, &33_u32);
+    shield_client.set_score_from(&authorized_operator_address, &base, &quote, &33_u32);
 
     let proxy_client = proxy_contract_client(&env, shield_contract_address);
     assert_eq!(

@@ -1,7 +1,8 @@
 use {
     crate::score::Score,
     soroban_sdk::{
-        Address, BytesN, Env, contract, contractevent, contractimpl, contractmeta, contracttype,
+        Address, BytesN, Env, Map, Vec, contract, contractevent, contractimpl, contractmeta,
+        contracttype,
     },
     stellar_oracle_shield_client::{Error, Status},
 };
@@ -14,8 +15,13 @@ contractmeta!(key = "license", val = env!("CARGO_PKG_LICENSE"));
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 enum DataKey {
+    /// administrator storage access key
     Admin,
+    /// operator storage access key for legacy single operator mode
     Operator,
+    /// operators storage access key for authorized operators
+    Operators,
+    /// staleness configuration access key
     MaxStaleness,
 }
 
@@ -41,7 +47,7 @@ impl Contract {
         env: Env,
         admin: Address,
         max_staleness: Option<u64>,
-        operator_key: Option<Address>,
+        operators: Option<Vec<Address>>,
     ) {
         const DEFAULT_MAX_STALENESS_SECONDS: u64 = 3600;
         admin.require_auth();
@@ -50,10 +56,8 @@ impl Contract {
             &DataKey::MaxStaleness,
             &max_staleness.unwrap_or(DEFAULT_MAX_STALENESS_SECONDS),
         );
-        if let Some(operator_key) = operator_key {
-            env.storage()
-                .instance()
-                .set(&DataKey::Operator, &operator_key)
+        if let Some(operators) = operators {
+            Self::set_operators_unchecked(&env, operators).expect("failed to set operators");
         }
     }
 
@@ -73,10 +77,58 @@ impl Contract {
     fn set_operator_key(env: Env, operator_key: Address) -> Result<(), Error> {
         let admin = Self::get_admin(&env)?;
         admin.require_auth();
-        env.storage()
-            .instance()
-            .set(&DataKey::Operator, &operator_key);
+        let mut operators = Map::new(&env);
+        operators.set(operator_key, ());
+        Self::set_inner_operators(&env, &operators);
         Ok(())
+    }
+
+    fn add_operator(env: Env, operator: Address) -> Result<(), Error> {
+        let admin = Self::get_admin(&env)?;
+        admin.require_auth();
+
+        let mut operators = Self::get_operators(&env);
+        operators.set(operator, ());
+        Self::set_inner_operators(&env, &operators);
+
+        Ok(())
+    }
+
+    fn remove_operator(env: Env, operator: Address) -> Result<(), Error> {
+        let admin = Self::get_admin(&env)?;
+        admin.require_auth();
+
+        let mut operators = Self::get_operators(&env);
+        operators.remove(operator);
+        Self::set_inner_operators(&env, &operators);
+
+        Ok(())
+    }
+
+    fn set_operators(env: Env, operators: Vec<Address>) -> Result<(), Error> {
+        let admin = Self::get_admin(&env)?;
+        admin.require_auth();
+
+        Self::set_operators_unchecked(&env, operators)
+    }
+
+    fn set_operators_unchecked(env: &Env, operators: Vec<Address>) -> Result<(), Error> {
+        let mut op_map: Map<Address, ()> = Map::new(env);
+
+        for operator in operators.iter() {
+            op_map.set(operator, ());
+        }
+
+        Self::set_inner_operators(env, &op_map);
+
+        Ok(())
+    }
+
+    fn set_inner_operators(env: &Env, operators: &Map<Address, ()>) {
+        let storage = env.storage().instance();
+
+        storage.set(&DataKey::Operators, operators);
+        storage.remove(&DataKey::Operator);
     }
 
     fn get_admin(env: &Env) -> Result<Address, Error> {
@@ -86,31 +138,74 @@ impl Contract {
             .ok_or(Error::MissingAdmin)
     }
 
-    fn get_operator(env: &Env) -> Result<Address, Error> {
-        env.storage()
-            .instance()
-            .get(&DataKey::Operator)
-            .ok_or(Error::MissingOperator)
+    fn get_operators(env: &Env) -> Map<Address, ()> {
+        let storage = env.storage().instance();
+
+        let default_operators = || -> Map<Address, ()> {
+            let mut operators = Map::new(env);
+
+            // backward compatibility with legacy single operator
+            if let Some(operator) = storage.get(&DataKey::Operator) {
+                operators.set(operator, ());
+            }
+
+            operators
+        };
+
+        storage
+            .get(&DataKey::Operators)
+            .unwrap_or_else(default_operators)
     }
 
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error> {
-        let operator = Self::get_operator(&env)?;
+        let operators = Self::get_operators(&env);
+        if operators.len() != 1 {
+            return Err(Error::UnauthorizedOperator);
+        }
+
+        let (operator, _) = operators.iter().next().unwrap();
         operator.require_auth();
 
+        Self::set_score_from_unchecked(env, operator, base, quote, score)
+    }
+
+    fn set_score_from(
+        env: Env,
+        operator: Address,
+        base: Address,
+        quote: Address,
+        score: u32,
+    ) -> Result<(), Error> {
+        let operators = Self::get_operators(&env);
+        if !operators.contains_key(operator.clone()) {
+            return Err(Error::UnauthorizedOperator);
+        }
+        operator.require_auth();
+
+        Self::set_score_from_unchecked(env, operator, base, quote, score)
+    }
+
+    fn set_score_from_unchecked(
+        env: Env,
+        _operator: Address,
+        base: Address,
+        quote: Address,
+        score: u32,
+    ) -> Result<(), Error> {
         let pair = Pair(base, quote);
         let old_score = Self::get_inner_score(&env, &pair);
         let score = Score::new(score, env.ledger().timestamp())?;
         env.storage().temporary().set(&pair, &score);
 
-        if let Ok(old_score) = old_score {
-            if old_score.status() != score.status() {
-                StatusChange {
-                    base: pair.0,
-                    quote: pair.1,
-                    status: score.into(),
-                }
-                .publish(&env)
+        if let Ok(old_score) = old_score
+            && old_score.status() != score.status()
+        {
+            StatusChange {
+                base: pair.0,
+                quote: pair.1,
+                status: score.into(),
             }
+            .publish(&env)
         }
         Ok(())
     }
@@ -181,7 +276,7 @@ impl stellar_oracle_shield_client::Contract for Contract {
         Contract::set_max_staleness(env, max_staleness)
     }
 
-    /// set operator address
+    /// set operator address in legacy single operator mode
     /// `operator_key` - Address
     ///
     /// restricted to admin
@@ -189,7 +284,31 @@ impl stellar_oracle_shield_client::Contract for Contract {
         Contract::set_operator_key(env, operator_key)
     }
 
-    /// set score of a pair
+    /// set operator addresses
+    /// `operators` - Addresses
+    ///
+    /// restricted to admin
+    fn set_operators(env: Env, operators: Vec<Address>) -> Result<(), Error> {
+        Contract::set_operators(env, operators)
+    }
+
+    /// add operator
+    /// `operator` - operator address
+    ///
+    /// restricted to admin
+    fn add_operator(env: Env, operator: Address) -> Result<(), Error> {
+        Contract::add_operator(env, operator)
+    }
+
+    /// remove operator
+    /// `operator` - operator address
+    ///
+    /// restricted to admin
+    fn remove_operator(env: Env, operator: Address) -> Result<(), Error> {
+        Contract::remove_operator(env, operator)
+    }
+
+    /// set score of a pair in legacy single operator mode
     /// `base` - SAC address of an asset
     /// `quote` - SAC address of an asset
     /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
@@ -197,6 +316,23 @@ impl stellar_oracle_shield_client::Contract for Contract {
     /// restricted to operator
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error> {
         Contract::set_score(env, base, quote, score)
+    }
+
+    /// set score of a pair
+    /// `operator` - operator generating the score
+    /// `base` - SAC address of an asset
+    /// `quote` - SAC address of an asset
+    /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
+    ///
+    /// restricted to operator
+    fn set_score_from(
+        env: Env,
+        operator: Address,
+        base: Address,
+        quote: Address,
+        score: u32,
+    ) -> Result<(), Error> {
+        Contract::set_score_from(env, operator, base, quote, score)
     }
 
     /// get score of a pair
