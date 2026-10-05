@@ -521,4 +521,62 @@ fn test_max_staleness() {
     assert_eq!(client.get_score(&base, &quote), 12);
 }
 
+#[test]
+fn test_admin_handover() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let new_admin_address = Address::generate(&env);
+    let another_operator = Address::generate(&env);
+
+    let (client, contract_id, _, admin_address) = build_contract_client(&env);
+    client.hand_over_admin(&new_admin_address);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            admin_address.clone(),
+            contract_id.clone(),
+            "hand_over_admin",
+            (new_admin_address.clone(),)
+        )]
+    );
+
+    client.add_operator(&another_operator);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            admin_address.clone(), // the point
+            contract_id.clone(),
+            "add_operator",
+            (another_operator.clone(),)
+        )]
+    );
+
+    client.accept_admin();
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            new_admin_address.clone(),
+            contract_id.clone(),
+            "accept_admin",
+            ()
+        )]
+    );
+
+    client.add_operator(&another_operator);
+    assert_eq!(
+        env.auths(),
+        [contract_auth_for(
+            &env,
+            new_admin_address.clone(), // the point
+            contract_id.clone(),
+            "add_operator",
+            (another_operator.clone(),)
+        )]
+    );
+}
+
 mod quorum;
