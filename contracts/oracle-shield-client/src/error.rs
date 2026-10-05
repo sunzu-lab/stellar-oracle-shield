@@ -22,4 +22,8 @@ pub enum Error {
     UnauthorizedOperator = 707,
     /// quorum not reached
     QuorumNotReached = 708,
+    /// time-locked operation - too early
+    TimeLocked = 709,
+    /// expired operation - too late
+    Expired = 710,
 }

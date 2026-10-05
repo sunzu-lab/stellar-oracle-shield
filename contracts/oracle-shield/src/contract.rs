@@ -17,6 +17,8 @@ contractmeta!(key = "license", val = env!("CARGO_PKG_LICENSE"));
 enum DataKey {
     /// administrator storage access key
     Admin,
+    /// pending administrator storage access key
+    PendingAdmin,
     /// legacy - operator storage access key for legacy single operator mode
     Operator,
     /// operators storage access key for authorized operators
@@ -46,9 +48,12 @@ const VERSION: (u32, u32, u32) = (
     parse_version(env!("CARGO_PKG_VERSION_PATCH")),
 );
 
+const ADMIN_TRANSFER_DELAY_SECONDS: u64 = 86_400;
+const ADMIN_TRANSFER_TTL: u32 = 120_960;
+
 #[contractimpl]
 impl Contract {
-    /// initialze contract
+    /// initialize contract
     /// set administator address
     pub fn __constructor(
         env: Env,
@@ -363,10 +368,81 @@ impl Contract {
     ///
     /// restricted to admin
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin = Self::get_admin(&env).unwrap();
         admin.require_auth();
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// hand over administration privileges
+    /// current administrator will kill administration privileges
+    /// until new_admin has accepted them
+    ///
+    /// restricted to admin
+    pub fn hand_over_admin(env: Env, new_admin: Address) {
+        let admin = Self::get_admin(&env).unwrap();
+        admin.require_auth();
+
+        let now = env.ledger().timestamp();
+        let valid_after = now + ADMIN_TRANSFER_DELAY_SECONDS;
+        let candidate = (new_admin, valid_after);
+        let storage = env.storage().temporary();
+        storage.set(&DataKey::PendingAdmin, &candidate);
+        storage.extend_ttl(
+            &DataKey::PendingAdmin,
+            ADMIN_TRANSFER_TTL,
+            ADMIN_TRANSFER_TTL,
+        );
+
+        let event = AdminTransferInitiated { admin, candidate };
+        event.publish(&env);
+    }
+
+    /// cancel pending hand over administration privileges
+    ///
+    /// restricted to admin
+    pub fn cancel_hand_over_admin(env: Env) {
+        let admin = Self::get_admin(&env).unwrap();
+        admin.require_auth();
+
+        let storage = env.storage().temporary();
+        if let Some(candidate) = storage.get::<_, (Address, u64)>(&DataKey::PendingAdmin) {
+            storage.remove(&DataKey::PendingAdmin);
+
+            let event = AdminTransferCancelled { admin, candidate };
+            event.publish(&env);
+        }
+    }
+
+    /// accept administration privileges
+    ///
+    /// restricted to pending admin
+    pub fn accept_admin(env: Env) -> Result<(), Error> {
+        let storage = env.storage().temporary();
+        if let Some((pending_admin, valid_after)) =
+            storage.get::<_, (Address, u64)>(&DataKey::PendingAdmin)
+        {
+            pending_admin.require_auth();
+
+            if env.ledger().timestamp() < valid_after {
+                return Err(Error::TimeLocked);
+            }
+
+            storage.remove(&DataKey::PendingAdmin);
+
+            let old_admin = Self::get_admin(&env).unwrap();
+            let new_admin = pending_admin;
+            let storage = env.storage().instance();
+            storage.set(&DataKey::Admin, &new_admin);
+            let event = AdminTransfered {
+                old_admin,
+                new_admin,
+            };
+            event.publish(&env);
+            Ok(())
+        } else {
+            Err(Error::Expired)
+        }
     }
 }
 
@@ -391,6 +467,27 @@ pub struct StatusChange {
 #[contractevent(data_format = "single-value")]
 pub struct ParametersChange {
     pub parameters: Parameters,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct AdminTransferInitiated {
+    #[topic]
+    pub admin: Address,
+    pub candidate: (Address, u64),
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct AdminTransferCancelled {
+    #[topic]
+    pub admin: Address,
+    pub candidate: (Address, u64),
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct AdminTransfered {
+    #[topic]
+    pub old_admin: Address,
+    pub new_admin: Address,
 }
 
 const fn parse_version(s: &str) -> u32 {
