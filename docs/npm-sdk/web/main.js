@@ -29,7 +29,7 @@ function setMode(next) {
   $("setFields").hidden = mode !== Mode.SET;
   $("run").textContent =
     mode === Mode.GET ? "Query" : mode === Mode.SUBSCRIBE ? "Subscribe" : "Submit";
-  $("out").textContent = "Result appears here…"; 
+  $("out").textContent = "Result appears here…";
 }
 
 $("modeGet").addEventListener("click", () => setMode(Mode.GET));
@@ -176,7 +176,7 @@ $("run").addEventListener("click", async () => {
         signAuthEntry: (xdr) =>
           k.signAuthEntry(xdr, { address: walletAddress, networkPassphrase: NETWORK.networkPassphrase }),
       });
-      const tx = await client.set_score({ ...pair, score });
+      const tx = await client.set_score_from({ ...walletAddress, pair, score });
       const sent = await tx.signAndSend();
       const hash = sent?.sendTransactionResponse?.hash;
 
