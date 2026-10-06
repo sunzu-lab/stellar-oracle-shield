@@ -49,8 +49,10 @@
 
 mod contract_interface;
 mod error;
+mod parameters;
 mod status;
 
 pub use contract_interface::*;
 pub use error::*;
+pub use parameters::*;
 pub use status::*;
