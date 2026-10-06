@@ -1,10 +1,10 @@
 use {
-    crate::score::Score,
+    crate::score::{AggregatedScore, Score, TimestampedScore},
     soroban_sdk::{
         Address, BytesN, Env, Map, Vec, contract, contractevent, contractimpl, contractmeta,
         contracttype,
     },
-    stellar_oracle_shield_client::{Error, Status},
+    stellar_oracle_shield_client::{Error, Parameters, Status},
 };
 
 contractmeta!(key = "name", val = env!("CARGO_PKG_NAME"));
@@ -17,17 +17,24 @@ contractmeta!(key = "license", val = env!("CARGO_PKG_LICENSE"));
 enum DataKey {
     /// administrator storage access key
     Admin,
-    /// operator storage access key for legacy single operator mode
+    /// legacy - operator storage access key for legacy single operator mode
     Operator,
     /// operators storage access key for authorized operators
     Operators,
-    /// staleness configuration access key
+    /// legacy - staleness configuration access key
     MaxStaleness,
+    /// contract parameter set
+    Parameters,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct Pair(Address, Address);
+
+/// latest report by an operator for an ordered pair
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct OperatorScoreKey(Pair, Address);
 
 /// oracle shield main contract
 #[contract]
@@ -47,15 +54,19 @@ impl Contract {
         env: Env,
         admin: Address,
         max_staleness: Option<u64>,
+        max_deviation: Option<u32>,
+        quorum: Option<u32>,
         operators: Option<Vec<Address>>,
     ) {
-        const DEFAULT_MAX_STALENESS_SECONDS: u64 = 3600;
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(
-            &DataKey::MaxStaleness,
-            &max_staleness.unwrap_or(DEFAULT_MAX_STALENESS_SECONDS),
-        );
+        let default_parameters = Parameters::default();
+        let parameters = Parameters {
+            max_staleness: max_staleness.unwrap_or(default_parameters.max_staleness),
+            max_deviation: max_deviation.unwrap_or(default_parameters.max_deviation),
+            quorum: quorum.unwrap_or(default_parameters.quorum),
+        };
+        Self::set_parameters_unchecked(&env, &parameters);
         if let Some(operators) = operators {
             Self::set_operators_unchecked(&env, operators).expect("failed to set operators");
         }
@@ -65,12 +76,58 @@ impl Contract {
         VERSION
     }
 
+    fn set_parameters_unchecked(env: &Env, parameters: &Parameters) {
+        env.storage()
+            .instance()
+            .set(&DataKey::Parameters, &parameters);
+
+        ParametersChange {
+            parameters: *parameters,
+        }
+        .publish(env);
+    }
+
+    fn get_parameters(env: &Env) -> Parameters {
+        let parameters = env.storage().instance().get(&DataKey::Parameters);
+
+        if let Some(parameters) = parameters {
+            parameters
+        } else {
+            let mut parameters = Parameters::default();
+            // legacy migration
+            let max_staleness = env.storage().instance().get(&DataKey::MaxStaleness);
+            if let Some(max_staleness) = max_staleness {
+                parameters.max_staleness = max_staleness
+            }
+            Self::set_parameters_unchecked(env, &parameters);
+            parameters
+        }
+    }
+
     fn set_max_staleness(env: Env, max_staleness: u64) -> Result<(), Error> {
         let admin = Self::get_admin(&env)?;
         admin.require_auth();
-        env.storage()
-            .instance()
-            .set(&DataKey::MaxStaleness, &max_staleness);
+        let mut parameters = Self::get_parameters(&env);
+        parameters.max_staleness = max_staleness;
+        Self::set_parameters_unchecked(&env, &parameters);
+        Ok(())
+    }
+
+    fn set_max_deviation(env: Env, max_deviation: u32) -> Result<(), Error> {
+        let admin = Self::get_admin(&env)?;
+        admin.require_auth();
+        let mut parameters = Self::get_parameters(&env);
+        parameters.max_deviation = max_deviation;
+        Self::set_parameters_unchecked(&env, &parameters);
+        Ok(())
+    }
+
+    fn set_quorum(env: Env, quorum: u32) -> Result<(), Error> {
+        let admin = Self::get_admin(&env)?;
+        admin.require_auth();
+        let mut parameters = Self::get_parameters(&env);
+        parameters.quorum = quorum;
+        Self::set_parameters_unchecked(&env, &parameters);
         Ok(())
     }
 
@@ -187,55 +244,118 @@ impl Contract {
 
     fn set_score_from_unchecked(
         env: Env,
-        _operator: Address,
+        operator: Address,
         base: Address,
         quote: Address,
         score: u32,
     ) -> Result<(), Error> {
         let pair = Pair(base, quote);
         let old_score = Self::get_inner_score(&env, &pair);
-        let score = Score::new(score, env.ledger().timestamp())?;
-        env.storage().temporary().set(&pair, &score);
+        let ope_score = TimestampedScore::new(score, env.ledger().timestamp())?;
+        let key = OperatorScoreKey(pair.clone(), operator);
+        env.storage().temporary().set(&key, &ope_score);
+        let new_score = Self::get_inner_score(&env, &pair);
 
-        if let Ok(old_score) = old_score
-            && old_score.status() != score.status()
-        {
-            StatusChange {
-                base: pair.0,
-                quote: pair.1,
-                status: score.into(),
+        if let Ok(score) = new_score {
+            let (score_changed, status_changed) = if let Ok(os) = old_score {
+                (
+                    os.score.score != score.score.score,
+                    os.status() != score.status(),
+                )
+            } else {
+                (true, true)
+            };
+
+            if score_changed {
+                ScoreChange {
+                    base: pair.0.clone(),
+                    quote: pair.1.clone(),
+                    score: score.score.score,
+                }
+                .publish(&env);
             }
-            .publish(&env)
+
+            if status_changed {
+                StatusChange {
+                    base: pair.0.clone(),
+                    quote: pair.1.clone(),
+                    status: score.status(),
+                }
+                .publish(&env);
+            }
         }
         Ok(())
     }
 
-    fn get_inner_score(env: &Env, pair: &Pair) -> Result<Score, Error> {
-        env.storage()
-            .temporary()
-            .get(&pair)
-            .ok_or(Error::PairNotCovered)
-            .and_then(|score: Score| {
-                let max_staleness = env
-                    .storage()
-                    .instance()
-                    .get(&DataKey::MaxStaleness)
-                    .ok_or(Error::NoMaxStalenessSet)?;
-                if env.ledger().timestamp() - score.ts > max_staleness {
-                    return Err(Error::StaleInput);
+    fn get_inner_score(env: &Env, pair: &Pair) -> Result<AggregatedScore, Error> {
+        let parameters = Self::get_parameters(env);
+        let now = env.ledger().timestamp();
+        let mut values: Vec<u32> = Vec::new(env);
+        let mut oldest_ts = now;
+        let mut found_report = false;
+        let operators = Self::get_operators(env);
+        let num_operators = operators.len();
+
+        for (operator, _) in operators.iter() {
+            let key = OperatorScoreKey(pair.clone(), operator);
+            if let Some(ts_score) = env.storage().temporary().get::<_, TimestampedScore>(&key) {
+                found_report = true;
+                let Some(age) = now.checked_sub(ts_score.ts) else {
+                    continue;
+                };
+                if age > parameters.max_staleness {
+                    continue;
                 }
-                Ok(score)
-            })
+                oldest_ts = oldest_ts.min(ts_score.ts);
+                let score = ts_score.score.score;
+                let index = values.binary_search(score).unwrap_or_else(|i| i);
+                values.insert(index, score);
+            }
+        }
+
+        if values.is_empty() {
+            return Err(if found_report {
+                Error::StaleInput
+            } else {
+                Error::PairNotCovered
+            });
+        }
+
+        let count = values.len();
+        let middle = count / 2;
+        let median = if count.is_multiple_of(2) {
+            (values.get_unchecked(middle - 1) + values.get_unchecked(middle)) / 2
+        } else {
+            values.get_unchecked(middle)
+        };
+        let mut consensus = 0_u32;
+        for value in values.iter() {
+            if value.abs_diff(median) <= parameters.max_deviation {
+                consensus += 1;
+            }
+        }
+
+        if consensus < parameters.quorum {
+            return Err(Error::QuorumNotReached);
+        }
+        let aggregated_score = AggregatedScore {
+            score: Score::new(median)?,
+            oldest_ts,
+            ts: now,
+            consensus,
+            num_operators,
+        };
+        Ok(aggregated_score)
     }
 
     fn get_score(env: Env, base: Address, quote: Address) -> Result<u32, Error> {
         let score = Self::get_inner_score(&env, &Pair(base, quote))?;
-        Ok(score.score)
+        Ok(score.score.score)
     }
 
     fn get_status(env: Env, base: Address, quote: Address) -> Result<Status, Error> {
         let score = Self::get_inner_score(&env, &Pair(base, quote))?;
-        Ok(score.into())
+        Ok(score.score.into())
     }
 
     /// upgrade the contract with the new one
@@ -251,12 +371,26 @@ impl Contract {
 }
 
 #[contractevent(data_format = "single-value")]
+pub struct ScoreChange {
+    #[topic]
+    pub base: Address,
+    #[topic]
+    pub quote: Address,
+    pub score: u32,
+}
+
+#[contractevent(data_format = "single-value")]
 pub struct StatusChange {
     #[topic]
     pub base: Address,
     #[topic]
     pub quote: Address,
     pub status: Status,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ParametersChange {
+    pub parameters: Parameters,
 }
 
 const fn parse_version(s: &str) -> u32 {
@@ -274,6 +408,25 @@ impl stellar_oracle_shield_client::Contract for Contract {
     /// restricted to admin
     fn set_max_staleness(env: Env, max_staleness: u64) -> Result<(), Error> {
         Contract::set_max_staleness(env, max_staleness)
+    }
+
+    /// set maximum deviation from the median for a fresh score to be considered agreeing
+    ///
+    /// restricted to admin
+    fn set_max_deviation(env: Env, max_deviation: u32) -> Result<(), Error> {
+        Contract::set_max_deviation(env, max_deviation)
+    }
+
+    /// set minimum number of fresh scores agreeing with the median score. Defaults to one.
+    /// Zero disables the quorum constraint but still requires a fresh score.
+    /// restricted to admin
+    fn set_quorum(env: Env, quorum: u32) -> Result<(), Error> {
+        Contract::set_quorum(env, quorum)
+    }
+
+    /// contract parameter set
+    fn get_parameters(env: Env) -> Result<Parameters, Error> {
+        Ok(Contract::get_parameters(&env))
     }
 
     /// set operator address in legacy single operator mode
@@ -342,7 +495,8 @@ impl stellar_oracle_shield_client::Contract for Contract {
     /// return the score
     /// fails if
     /// - pair is not covered
-    /// - input for pair is stale (unreliable score)
+    /// - no fresh operator reports remain
+    /// - median status consensus is below quorum
     fn get_score(env: Env, base: Address, quote: Address) -> Result<u32, Error> {
         Contract::get_score(env, base, quote)
     }
@@ -354,7 +508,8 @@ impl stellar_oracle_shield_client::Contract for Contract {
     /// return the score
     /// fails if
     /// - pair is not covered
-    /// - input for pair is stale (unreliable score)
+    /// - no fresh operator reports remain
+    /// - median status consensus is below quorum
     fn get_status(env: Env, base: Address, quote: Address) -> Result<Status, Error> {
         Contract::get_status(env, base, quote)
     }
