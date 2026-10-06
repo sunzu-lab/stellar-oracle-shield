@@ -20,4 +20,6 @@ pub enum Error {
     NoMaxStalenessSet = 706,
     /// operator is not registered
     UnauthorizedOperator = 707,
+    /// quorum not reached
+    QuorumNotReached = 708,
 }

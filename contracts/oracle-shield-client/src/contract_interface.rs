@@ -12,6 +12,16 @@ pub trait Contract {
     /// restricted to admin
     fn set_max_staleness(env: Env, max_staleness: u64) -> Result<(), Error>;
 
+    /// set maximum deviation from the median for a fresh score to be considered agreeing
+    ///
+    /// restricted to admin
+    fn set_max_deviation(env: Env, max_deviation: u32) -> Result<(), Error>;
+
+    /// set minimum number of fresh scores agreeing with the median score. Defaults to one.
+    /// Zero disables the quorum constraint but still requires a fresh score.
+    /// restricted to admin
+    fn set_quorum(env: Env, quorum: u32) -> Result<(), Error>;
+
     /// set operator address in legacy single operator mode
     /// `operator_key` - Address
     ///
