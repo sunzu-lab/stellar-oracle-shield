@@ -226,7 +226,24 @@ impl Contract {
         let (operator, _) = operators.iter().next().unwrap();
         operator.require_auth();
 
-        Self::set_score_from_unchecked(env, operator, base, quote, score)
+        Self::set_score_from_unchecked(&env, operator, base, quote, score)
+    }
+
+    fn set_scores(
+        env: Env,
+        operator: Address,
+        scores: Vec<(Address, Address, u32)>,
+    ) -> Result<(), Error> {
+        let operators = Self::get_operators(&env);
+        if !operators.contains_key(operator.clone()) {
+            return Err(Error::UnauthorizedOperator);
+        }
+        operator.require_auth();
+
+        for (base, quote, score) in scores {
+            Self::set_score_from_unchecked(&env, operator.clone(), base, quote, score)?;
+        }
+        Ok(())
     }
 
     fn set_score_from(
@@ -242,11 +259,11 @@ impl Contract {
         }
         operator.require_auth();
 
-        Self::set_score_from_unchecked(env, operator, base, quote, score)
+        Self::set_score_from_unchecked(&env, operator, base, quote, score)
     }
 
     fn set_score_from_unchecked(
-        env: Env,
+        env: &Env,
         operator: Address,
         base: Address,
         quote: Address,
@@ -493,6 +510,22 @@ impl stellar_oracle_shield_client::Contract for Contract {
     /// restricted to operator
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error> {
         Contract::set_score(env, base, quote, score)
+    }
+
+    /// scores for multiple pairs
+    /// `operator` - operator generating scores
+    /// `scores` - vector of scores with the struct (base, quote, score)
+    /// base - SAC address of an asset
+    /// quote - SAC address of an asset
+    /// score - [0-100] scoring. 0 the more unsafe, 100 the healthier
+    ///
+    /// restricted to operator
+    fn set_scores(
+        env: Env,
+        operator: Address,
+        scores: Vec<(Address, Address, u32)>,
+    ) -> Result<(), Error> {
+        Contract::set_scores(env, operator, scores)
     }
 
     /// set score of a pair

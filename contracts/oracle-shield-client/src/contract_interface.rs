@@ -56,6 +56,21 @@ pub trait Contract {
     #[deprecated = "use set_score_from instead"]
     fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error>;
 
+    /// scores for multiple pairs
+    /// `operator` - operator generating scores
+    /// `scores` - vector of scores with the struct (base, quote, score)
+    /// base - SAC address of an asset
+    /// quote - SAC address of an asset
+    /// score - [0-100] scoring. 0 the more unsafe, 100 the healthier
+    ///
+    ///
+    /// restricted to operator
+    fn set_scores(
+        env: Env,
+        operator: Address,
+        scores: Vec<(Address, Address, u32)>,
+    ) -> Result<(), Error>;
+
     /// set score of a pair
     /// `operator` - operator generating the score
     /// `base` - SAC address of an asset
