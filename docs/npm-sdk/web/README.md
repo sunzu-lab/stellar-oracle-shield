@@ -95,9 +95,9 @@ const tx = await client.set_score({ base, quote, score });
 await tx.signAndSend();                            // wallet prompts to approve
 ```
 
-> The connected wallet must be the contract's configured **operator**. The
-> administrator configures that address with `set_operator_key`; otherwise the
-> call fails with `MissingOperator` or an authorization error. See
+> The connected wallet must be a contract's registered **operator**. The
+> administrator configures that address with `set_operators` or `add_operator`; otherwise the
+> call fails with an authorization error. See
 > [Publishing a Health Score](../../../README.md#publishing-a-health-score).
 
 ## Generating the client yourself (from a live contract)
