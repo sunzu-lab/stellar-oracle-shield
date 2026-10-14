@@ -124,7 +124,7 @@ The administrator can:
 
 ### Operators
 
-Operators are accounts authorized to publish health scores using `set_score_from`.
+Operators are accounts authorized to publish health scores using `set_score_from`, or `set_scores` to publish several pairs in one transaction.
 
 Operators do **not** control protocol decisions. They supply individual health reports from which the contract computes the consensus score.
 
@@ -160,6 +160,7 @@ Operator functions are:
 
 ```text
 set_score_from(operator, base, quote, score)
+set_scores(operator, scores)   # scores: Vec<(base, quote, score)>
 ```
 
 `base` and `quote` are Stellar Asset Contract (SAC) addresses. The public getters still return only the aggregated numeric score or status; they do not expose individual reports or the agreement count.
@@ -304,6 +305,17 @@ Assuming a Stellar CLI identity named `operator` owns a registered operator addr
 ```
 
 The score must be between `0` and `100`.
+
+To publish several pairs in a single transaction, use `set_scores`. Each entry is a `[base, quote, score]` tuple:
+
+```bash
+./invoke testnet operator \
+  set_scores \
+  --operator <OPERATOR_ADDRESS> \
+  --scores '[["<BASE_SAC_ADDRESS>","<QUOTE_SAC_ADDRESS>",82],["<BASE_SAC_ADDRESS>","<OTHER_QUOTE_SAC_ADDRESS>",40]]'
+```
+
+The batch is atomic: if any entry is invalid, no score is stored.
 
 An authorized publication of a valid score succeeds even when consensus is not yet available. The report is stored, and later publications can establish quorum.
 
