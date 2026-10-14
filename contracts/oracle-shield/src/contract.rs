@@ -17,6 +17,8 @@ contractmeta!(key = "license", val = env!("CARGO_PKG_LICENSE"));
 enum DataKey {
     /// administrator storage access key
     Admin,
+    /// pending administrator storage access key
+    PendingAdmin,
     /// operator storage access key for legacy single operator mode
     Operator,
     /// operators storage access key for authorized operators
@@ -368,10 +370,37 @@ impl Contract {
     ///
     /// restricted to admin
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin = Self::get_admin(&env).unwrap();
         admin.require_auth();
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// hand over administration privileges
+    /// current administrator will kill administration privileges
+    /// until new_admin has accepted them
+    ///
+    /// restricted to admin
+    pub fn hand_over_admin(env: Env, new_admin: Address) {
+        let admin = Self::get_admin(&env).unwrap();
+        admin.require_auth();
+
+        let storage = env.storage().temporary();
+        storage.set(&DataKey::PendingAdmin, &new_admin);
+    }
+
+    /// accept administration privileges
+    ///
+    /// restricted to pending admin
+    pub fn accept_admin(env: Env) {
+        let storage = env.storage().temporary();
+        if let Some(pending_admin) = storage.get::<_, Address>(&DataKey::PendingAdmin) {
+            pending_admin.require_auth();
+            storage.remove(&DataKey::PendingAdmin);
+
+            let storage = env.storage().instance();
+            storage.set(&DataKey::Admin, &pending_admin);
+        }
     }
 }
 

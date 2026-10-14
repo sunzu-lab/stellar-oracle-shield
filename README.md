@@ -120,6 +120,7 @@ The administrator can:
 * change the global maximum report age with `set_max_staleness`;
 * configure score agreement with `set_max_deviation` and `set_quorum`;
 * upgrade the contract WASM.
+* hand over its privileges
 
 ### Operators
 
@@ -151,6 +152,8 @@ set_max_staleness(max_staleness)
 set_max_deviation(max_deviation)
 set_quorum(quorum)
 upgrade(new_wasm_hash)
+hand_over_admin(new_admin)
+accept_admin()
 ```
 
 Operator functions are:
