@@ -23,9 +23,18 @@ fn shield_contract_client(
 ) -> (Address, Address, stellar_oracle_shield::ContractClient<'_>) {
     let admin_address = Address::generate(&env);
     let operator_address = Address::generate(&env);
+    let max_staleness = 60_u64;
+    let max_deviation: Option<u32> = None;
+    let quorum: Option<u32> = None;
     let mut operators = Vec::new(env);
     operators.push_back(operator_address.clone());
-    let constructor_args = (admin_address, 60_u64, Some(operators));
+    let constructor_args = (
+        admin_address.clone(),
+        max_staleness,
+        max_deviation,
+        quorum,
+        Some(operators),
+    );
     let contract_id = env.register(stellar_oracle_shield::Contract, constructor_args);
 
     (

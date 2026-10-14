@@ -31,9 +31,14 @@ fn contract_auth_for(
 fn build_contract_client(env: &Env) -> (ContractClient<'_>, Address, Address, Address) {
     let admin_address = Address::generate(&env);
     let operator_address = Address::generate(&env);
+    let max_staleness = 60_u64;
+    let max_deviation: Option<u32> = None;
+    let quorum: Option<u32> = None;
     let constructor_args = (
         admin_address.clone(),
-        60_u64,
+        max_staleness,
+        max_deviation,
+        quorum,
         Some(vec![env, operator_address.clone()]),
     );
     let contract_id = env.register(Contract, constructor_args);
@@ -66,10 +71,15 @@ fn test_constructor() {
     env.mock_all_auths();
 
     let admin_address = Address::generate(&env);
+    let max_staleness = 60_u64;
+    let max_deviation: Option<u32> = None;
+    let quorum: Option<u32> = None;
     let operator_address = Address::generate(&env);
     let constructor_args = (
         admin_address.clone(),
-        60_u64,
+        max_staleness,
+        max_deviation,
+        quorum,
         Some(vec![&env, operator_address]),
     );
     let contract_id = env.register(Contract, constructor_args.clone());
@@ -388,13 +398,33 @@ fn test_event() {
     let quote = xlm_address(&env);
 
     client.set_score_from(&operator_address, &base, &quote, &0_u32);
-    assert!(
-        env.events()
-            .all()
-            .filter_by_contract(&contract_id)
-            .events()
-            .is_empty()
-    );
+    let event = env.events().all().filter_by_contract(&contract_id);
+    let score_change = ScoreChange {
+        base: base.clone(),
+        quote: quote.clone(),
+        score: 0,
+    };
+    let status_change = StatusChange {
+        base: base.clone(),
+        quote: quote.clone(),
+        status: Status::Unsafe,
+    };
+
+    let expected = [
+        score_change.to_xdr(&env, &contract_id),
+        status_change.to_xdr(&env, &contract_id),
+    ];
+    assert_eq!(event.events(), &expected);
+
+    client.set_score_from(&operator_address, &base, &quote, &10_u32);
+    let event = env.events().all().filter_by_contract(&contract_id);
+    let score_change = ScoreChange {
+        base: base.clone(),
+        quote: quote.clone(),
+        score: 10,
+    };
+    let expected = [score_change.to_xdr(&env, &contract_id)];
+    assert_eq!(event.events(), &expected);
 
     client.set_score_from(&operator_address, &base, &quote, &10_u32);
     assert!(
@@ -407,28 +437,43 @@ fn test_event() {
 
     client.set_score_from(&operator_address, &base, &quote, &44_u32);
     let event = env.events().all().filter_by_contract(&contract_id);
-    let expected = StatusChange {
+    let score_change = ScoreChange {
+        base: base.clone(),
+        quote: quote.clone(),
+        score: 44,
+    };
+    let status_change = StatusChange {
         base: base.clone(),
         quote: quote.clone(),
         status: Status::Degraded,
     };
 
-    assert_eq!(event.events(), &[expected.to_xdr(&env, &contract_id)]);
+    let expected = [
+        score_change.to_xdr(&env, &contract_id),
+        status_change.to_xdr(&env, &contract_id),
+    ];
+    assert_eq!(event.events(), &expected);
 
     client.set_score_from(&operator_address, &base, &quote, &66_u32);
-    let event = env.events().all();
+    let events = env.events().all();
+    let score_change_event = (
+        contract_id.clone(),
+        (
+            Symbol::new(&env, "score_change"),
+            base.clone(),
+            quote.clone(),
+        )
+            .into_val(&env),
+        66_u32.into_val(&env),
+    );
+    let status_change_event = (
+        contract_id,
+        (Symbol::new(&env, "status_change"), base, quote).into_val(&env),
+        Status::Healthy.into_val(&env),
+    );
+    let expected = vec![&env, score_change_event, status_change_event];
 
-    assert_eq!(
-        event,
-        vec![
-            &env,
-            (
-                contract_id,
-                (Symbol::new(&env, "status_change"), base, quote).into_val(&env),
-                Status::Healthy.into_val(&env)
-            )
-        ]
-    )
+    assert_eq!(events, expected)
 }
 
 #[test]
@@ -475,3 +520,5 @@ fn test_max_staleness() {
     client.set_score_from(&operator_address, &base, &quote, &12_u32);
     assert_eq!(client.get_score(&base, &quote), 12);
 }
+
+mod quorum;
