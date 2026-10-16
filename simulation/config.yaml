@@ -1,0 +1,9 @@
+simulator:
+
+  node:
+    rpc_url: "http://localhost:8000/soroban/rpc"
+    friendbot_url: "http://localhost:8000/friendbot"
+    network_passphrase: "Standalone Network ; February 2017"
+
+  contract:
+    wasm_path: "../target/wasm32v1-none/release/stellar_oracle_shield.wasm"
