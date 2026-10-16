@@ -8,6 +8,11 @@ test_snapshots/
 .soroban
 .stellar
 
+# python cache
+__pycache__/
+
+# generated
+simulation/src/stellar_oracle_shield_client/bindings.py
 sdk/typescript/
 
 *.swp

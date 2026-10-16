@@ -1,0 +1,11 @@
+#!/bin/bash
+
+TAG=latest
+LISTEN_ADDRESS=127.0.0.1:8000
+NAME=stellar-local
+
+docker run --rm -d \
+       --name ${NAME} \
+       -p ${LISTEN_ADDRESS}:8000 \
+       stellar/quickstart:${TAG} \
+       --local

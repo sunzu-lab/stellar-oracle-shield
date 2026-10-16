@@ -1,0 +1,47 @@
+[tool.poetry]
+name        = "stellar-oracle-shield-simulation-suite"
+version     = "1.0.0"
+description = "Stellar Oracle Shield exploit and stress simulation suite"
+authors     = ["SUN ZU Lab <contact@sunzulab.com>"]
+packages    = [
+            {include = "stellar_oracle_shield_simulation_suite", from = "src"},
+            {include = "stellar_oracle_shield_client", from = "src"},
+            {include = "app"},
+            {include = "tests"},
+]
+
+[tool.poetry.scripts]
+generate-bindings  = "app:generate_bindings"
+
+[tool.poetry.dependencies]
+loguru            = ">=0.6"
+pydantic          = "^2.12"
+pydantic_settings = "^2.9"
+pyyaml            = "^6.0"
+python            = ">=3.10,<4.0"
+stellar-contract-bindings = "0.6.0b"
+stellar-sdk       = "^16.1"
+requests          = "^2.6"
+
+[tool.poetry.group.dev.dependencies]
+black  = "^26.5"
+mypy   = "^2.1"
+pytest = "^7.2.2"
+types-pyyaml   = "^6.0.12.20260815"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["app", "src", "tests"]
+plugins = ["pydantic.mypy"]
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "stellar_contract_bindings.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "stellar_oracle_shield_client.bindings"
+disable_error_code = ["attr-defined"]
