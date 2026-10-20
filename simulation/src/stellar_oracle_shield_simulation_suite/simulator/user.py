@@ -1,4 +1,4 @@
-from stellar_sdk import Address, Keypair, MuxedAccount, SorobanServer, scval, xdr
+from stellar_sdk import Address, Keypair, MuxedAccount, xdr
 from stellar_oracle_shield_client.bindings import (
     Client as OracleShieldClient,
     StatusKind as OracleShieldStatusKind,
@@ -19,7 +19,7 @@ class User:
         ).result()
 
         if isinstance(version, xdr.SCVal):
-            raise TypeError(f"Raw value returned")
+            raise TypeError("Raw value returned")
 
         return ".".join([str(v) for v in version])
 
@@ -41,7 +41,7 @@ class User:
         ).result()
 
         if isinstance(score, xdr.SCVal):
-            raise TypeError(f"Raw value returned")
+            raise TypeError("Raw value returned")
 
         return score
 
@@ -65,6 +65,6 @@ class User:
         ).result()
 
         if isinstance(status, xdr.SCVal):
-            raise TypeError(f"Raw value returned")
+            raise TypeError("Raw value returned")
 
         return status.kind

@@ -1,0 +1,22 @@
+[
+    {
+        "name": "USTRY.GCRYUGD5N-USDC.GA5ZSEJYB",
+        "expression": "max(0,(100 - (abs(sdex - reference) * 10000 / reference)))",
+        "base_stellar": "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR",
+        "quote_stellar": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+        "indicators": [
+            {
+                "name": "sdex",
+                "venue": "stellar",
+                "instrument": "USTRY.GCRYUGD5N-USDC.GA5ZSEJYB",
+	        "expression": "midprice"
+            },
+            {
+                "name": "reference",
+                "venue": "etherfuse",
+                "instrument": "USTRY-USDC",
+	        "expression": "midprice"
+            }
+        ]
+    }
+]

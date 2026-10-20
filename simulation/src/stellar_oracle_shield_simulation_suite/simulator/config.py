@@ -28,6 +28,7 @@ class ContractConfig(BaseModel):
 
 DEFAULT_SCORER_HOST = "localhost"
 DEFAULT_SCORER_PORT = 8696
+DEFAULT_SCORER_PUBLIC_KEY = "GC75T2HDPBHSRQJO27ZMSUNVZX6JCNDK777QHEC4I3L2XRCPFYGA4OQ6"
 
 
 class ScorerConfig(BaseModel):
@@ -37,6 +38,7 @@ class ScorerConfig(BaseModel):
 
     host: str = DEFAULT_SCORER_HOST
     port: int = DEFAULT_SCORER_PORT
+    public_key: str = DEFAULT_SCORER_PUBLIC_KEY
 
 
 class Config(BaseModel):

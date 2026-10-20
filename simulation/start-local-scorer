@@ -1,0 +1,22 @@
+#!/bin/bash
+
+IMAGE=ghcr.io/sunzu-lab/stellar-oracle-shield/health-score-engine
+TAG=v1.2.3
+
+LISTEN_ADDRESS=127.0.0.1:8696
+NAME=scorer-local
+NETWORK=stellar-oracle-shield-simulator-net
+
+# deterministic test operator address
+# must match config.yaml scorer.public_key
+OPERATOR_SECRET="SDOOKROL6XYCI4MHIMN3C5F3F6HPJWN6E5BKZBCQWFW4GXLTGYQFDC4F"
+
+docker run -d \
+       --name ${NAME} \
+       --network ${NETWORK} \
+       -p ${LISTEN_ADDRESS}:8696/udp \
+       --env OPERATOR_SECRET=${OPERATOR_SECRET} \
+       --workdir /workdir \
+       --volume ${PWD}/scorer.config.toml:/workdir/config.toml:ro \
+       --volume ${PWD}/scorer.scorings.json:/workdir/scorings.json:ro \
+       ${IMAGE}:${TAG}

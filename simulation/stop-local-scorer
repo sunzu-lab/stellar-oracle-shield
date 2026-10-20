@@ -1,0 +1,6 @@
+#!/bin/bash
+
+NAME=scorer-local
+
+docker stop ${NAME}
+docker rm ${NAME}

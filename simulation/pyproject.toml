@@ -24,10 +24,11 @@ stellar-sdk       = "^16.1"
 requests          = "^2.6"
 
 [tool.poetry.group.dev.dependencies]
-black  = "^26.5"
-mypy   = "^2.1"
-pytest = "^7.2.2"
-types-pyyaml   = "^6.0.12.20260815"
+black        = "^26.5"
+mypy         = "^2.1"
+pytest       = "^7.2.2"
+ruff         = "^0.15"
+types-pyyaml = "^6.0.12.20260815"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -45,3 +46,14 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "stellar_oracle_shield_client.bindings"
 disable_error_code = ["attr-defined"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+#output-format = "pylint"
+output-format = "concise"
+include = [
+    "app/**/*.py",
+    "src/**/*.py",
+    "tests/**/*.py",
+]
