@@ -1,11 +1,47 @@
 #!/bin/bash
 
-TAG=latest
+IMAGE=stellar/quickstart@sha256
+# protocol 29
+TAG=4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295
 LISTEN_ADDRESS=127.0.0.1:8000
 NAME=stellar-local
+NETWORK=stellar-oracle-shield-simulator-net
 
-docker run --rm -d \
+docker network create ${NETWORK}
+
+docker run -d \
        --name ${NAME} \
+       --network ${NETWORK} \
        -p ${LISTEN_ADDRESS}:8000 \
-       stellar/quickstart:${TAG} \
+       ${IMAGE}:${TAG} \
        --local
+
+echo "Waiting for Stellar RPC to become healthy..."
+
+MAX_ATTEMPTS=90
+RETRY_INTERVAL=2
+
+for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+    if curl --fail --silent --max-time 3 \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+        "http://${LISTEN_ADDRESS}/rpc" \
+        | grep -q '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
+
+        echo "Stellar RPC is ready!"
+        exit 0
+    fi
+
+    # Detect a container that exited during startup
+    if [[ "$(docker inspect -f '{{.State.Running}}' "${NAME}")" != "true" ]]; then
+        echo "ERROR: Stellar container stopped unexpectedly."
+        docker logs "${NAME}" --tail 100
+        exit 1
+    fi
+
+    sleep "${RETRY_INTERVAL}"
+done
+
+echo "ERROR: Stellar RPC did not become healthy within the timeout."
+docker logs "${NAME}" --tail 100
+exit 1

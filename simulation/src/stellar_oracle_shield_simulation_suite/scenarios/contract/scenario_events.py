@@ -15,7 +15,6 @@ from stellar_oracle_shield_client.bindings import (
 def run(simulator: Simulator):
     """Test events notifications."""
     operator = simulator.get_operator("main_operator")
-    admin = simulator.get_admin()
 
     start = simulator.server.get_latest_ledger().sequence + 1
 

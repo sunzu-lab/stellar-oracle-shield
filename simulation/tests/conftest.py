@@ -10,6 +10,7 @@ from collections.abc import Generator
 from pydantic import BaseModel, ConfigDict
 
 from stellar_oracle_shield_simulation_suite.simulator import (
+    DeterministicSimulator,
     Simulator,
     Config as SimulatorConfig,
 )
@@ -71,10 +72,18 @@ def simulator(simulation_config: Config) -> Generator[Simulator]:
     simulator = Simulator(simulation_config.simulator)
 
     try:
-        # context.create_funded_accounts()
-        # context.deploy_contract()  # A fresh instance for this scenario
-        # context.initialize_contract()
+        yield simulator
+    finally:
+        simulator.close()
 
+
+@pytest.fixture(scope="function")
+def deterministic_simulator(
+    simulation_config: Config,
+) -> Generator[DeterministicSimulator]:
+    simulator = DeterministicSimulator(simulation_config.simulator)
+
+    try:
         yield simulator
     finally:
         simulator.close()

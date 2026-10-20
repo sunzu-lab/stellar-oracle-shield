@@ -7,7 +7,6 @@ from stellar_oracle_shield_simulation_suite.simulator import (
 
 from stellar_oracle_shield_client.bindings import (
     Error as OracleShieldError,
-    StatusKind as OracleShieldStatusKind,
 )
 
 
