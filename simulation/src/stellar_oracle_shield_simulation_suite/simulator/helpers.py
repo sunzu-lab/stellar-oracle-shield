@@ -1,8 +1,10 @@
-from stellar_sdk import scval, xdr
+from stellar_sdk import Address, StrKey, scval, xdr
 from stellar_sdk.sep.contract_spec import ContractSpec
 
+from hashlib import sha256
+
 from contextlib import contextmanager
-from collections.abc import Iterator, Sequence, Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
 from stellar_oracle_shield_client.bindings import Error as OracleShieldError
@@ -100,3 +102,28 @@ def expect_needs_more_signatures() -> Iterator[NeedsMoreSignaturesResult]:
         yield result
     except NeedsMoreSignaturesError:
         result.error = True
+
+
+def derive_contract_id(
+    deployer: str,
+    salt: bytes,
+    network_passphrase: str,
+) -> str:
+    if len(salt) != 32:
+        raise ValueError("salt must contain exactly 32 bytes")
+
+    preimage = xdr.HashIDPreimage(
+        type=xdr.EnvelopeType.ENVELOPE_TYPE_CONTRACT_ID,
+        contract_id=xdr.HashIDPreimageContractID(
+            network_id=xdr.Hash(sha256(network_passphrase.encode("utf-8")).digest()),
+            contract_id_preimage=xdr.ContractIDPreimage(
+                type=xdr.ContractIDPreimageType.CONTRACT_ID_PREIMAGE_FROM_ADDRESS,
+                from_address=xdr.ContractIDPreimageFromAddress(
+                    address=Address(deployer).to_xdr_sc_address(),
+                    salt=xdr.Uint256(salt),
+                ),
+            ),
+        ),
+    )
+
+    return StrKey.encode_contract(sha256(preimage.to_xdr_bytes()).digest())

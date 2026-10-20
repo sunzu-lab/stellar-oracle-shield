@@ -1,11 +1,17 @@
 #!/bin/bash
 
-TAG=latest
+IMAGE=stellar/quickstart@sha256
+# protocol 29
+TAG=4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295
 LISTEN_ADDRESS=127.0.0.1:8000
 NAME=stellar-local
+NETWORK=stellar-oracle-shield-simulator-net
 
-docker run --rm -d \
+docker network create ${NETWORK}
+
+docker run -d \
        --name ${NAME} \
+       --network ${NETWORK} \
        -p ${LISTEN_ADDRESS}:8000 \
-       stellar/quickstart:${TAG} \
+       ${IMAGE}:${TAG} \
        --local
