@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stellar_sdk import Address, Keypair, MuxedAccount, SorobanServer, scval, xdr
+from stellar_sdk import Address, Keypair, MuxedAccount
 from stellar_oracle_shield_client.bindings import Client as OracleShieldClient
 
 from .operator import Operator
@@ -13,7 +13,7 @@ class Admin:
         self.account = account
         self.client = client
 
-    def add_operator(self, ope: Operator):
+    def add_operator(self, ope: Operator | Keypair):
         """add authorized operator"""
         operator: Address | str = ope.public_key
         muxed_account = MuxedAccount(self.account.public_key)

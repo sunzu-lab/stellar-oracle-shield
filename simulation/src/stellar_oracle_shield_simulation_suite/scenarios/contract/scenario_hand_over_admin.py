@@ -1,6 +1,5 @@
 from stellar_oracle_shield_simulation_suite.simulator import (
     Simulator,
-    OracleShieldError,
     expect_needs_more_signatures,
 )
 

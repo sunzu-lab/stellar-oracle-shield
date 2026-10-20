@@ -1,6 +1,7 @@
 from .admin import Admin
 from .config import Config
-from .helpers import build_constructor_args
+from .helpers import build_constructor_args, derive_contract_id
+from .indicator_engine import IndicatorEngine
 from .operator import Operator
 from .user import User
 
@@ -11,7 +12,10 @@ import time
 import requests
 from stellar_sdk import Address, Keypair, SorobanServer, scval
 from stellar_sdk.contract import ContractClient
-from stellar_sdk.exceptions import AccountNotFoundException
+from stellar_sdk.exceptions import (
+    AccountNotFoundException,
+    ContractInstanceNotFoundError,
+)
 from stellar_sdk.sep.contract_spec import ContractSpec
 
 from stellar_sdk.soroban_rpc import EventInfo, EventFilter, EventFilterType
@@ -35,6 +39,7 @@ DEFAULT_QUOTE: Address = Address(
     "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
 )
 
+
 class Simulator:
 
     def __init__(self, config: Config):
@@ -53,6 +58,8 @@ class Simulator:
         self.contract_id: str | None = None
         self.contract_client: OracleShieldClient | None = None
 
+        self.deployment_salt: bytes | None = None
+
     def close(self) -> None:
         try:
             self.server.close()
@@ -63,14 +70,25 @@ class Simulator:
 
     def create_funded_account(
         self,
-        count: int = 3,
+        keypair: Keypair | None = None,
+        *,
         visibility_timeout: float = 30,
     ) -> Keypair:
-        """Create fresh accounts and wait until RPC can read each one."""
+        """Return an existing account or create and fund a new one.
+
+        Uses the supplied keypair, or generates a fresh one.
+        """
         if visibility_timeout <= 0:
             raise ValueError("visibility_timeout must be positive")
 
-        account = Keypair.random()
+        account = keypair if keypair is not None else Keypair.random()
+
+        try:
+            self.server.load_account(account.public_key)
+        except AccountNotFoundException:
+            pass
+        else:
+            return account
 
         response = self.http.get(
             self.config.node.friendbot_url,
@@ -79,22 +97,21 @@ class Simulator:
         )
         response.raise_for_status()
 
-        # Friendbot and RPC may observe the ledger at different times.
+        # Wait for RPC to observe the newly funded account.
         deadline = time.monotonic() + visibility_timeout
 
         while True:
             try:
                 self.server.load_account(account.public_key)
-                break
+                return account
             except AccountNotFoundException as exc:
-                if time.monotonic() >= deadline:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     raise TimeoutError(
                         f"Funded account not visible in RPC: " f"{account.public_key}"
                     ) from exc
 
-                time.sleep(0.5)
-
-        return account
+                time.sleep(min(0.5, remaining))
 
     def get_admin_account(self) -> Keypair:
         """Return admin account instance."""
@@ -119,7 +136,26 @@ class Simulator:
         Returns contract id"""
 
         deployer = self.get_admin_account()
+        salt = self.deployment_salt or secrets.token_bytes(32)
         wasm = Path(self.config.contract.wasm_path).read_bytes()
+
+        target_contract_id = derive_contract_id(
+            deployer.public_key,
+            salt,
+            self.config.node.network_passphrase,
+        )
+
+        try:
+            deployed_wasm = self.server.get_contract_wasm(target_contract_id)
+        except ContractInstanceNotFoundError:
+            pass  # No instance: proceed with deployment.
+        else:
+            if deployed_wasm != wasm:
+                raise ValueError(
+                    f"Contract {target_contract_id} already exists with different WASM."
+                )
+
+            return target_contract_id
 
         wasm_hash = ContractClient.upload_contract_wasm(
             contract=wasm,
@@ -142,7 +178,7 @@ class Simulator:
             soroban_server=self.server,
             network_passphrase=self.config.node.network_passphrase,
             constructor_args=constructor_args,
-            salt=secrets.token_bytes(32),
+            salt=salt,
             submit_timeout=submit_timeout,
         )
 
@@ -394,3 +430,11 @@ class Simulator:
             self.user = User(account, client)
 
         return self.user
+
+    def get_scorer_account(self) -> Keypair:
+        keypair = Keypair.from_public_key(self.config.scorer.public_key)
+        return self.create_funded_account(keypair=keypair)
+
+    def get_indicator_engine(self) -> IndicatorEngine:
+        """Return indicator engine simulator instance"""
+        return IndicatorEngine(self.config.scorer)

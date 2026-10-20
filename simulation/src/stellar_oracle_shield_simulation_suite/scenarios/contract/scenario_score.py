@@ -15,7 +15,6 @@ def run(simulator: Simulator):
     """Check scores boundaries and status mapping."""
     operator = simulator.get_operator("main_operator")
     user = simulator.get_user()
-    admin = simulator.get_admin()
 
     operator.set_score(DEFAULT_BASE, DEFAULT_QUOTE, 0)
     score = user.get_score(DEFAULT_BASE, DEFAULT_QUOTE)
