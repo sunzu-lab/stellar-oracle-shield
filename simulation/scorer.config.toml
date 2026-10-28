@@ -1,0 +1,20 @@
+[application]
+broadcast_len = 2000
+scoring_path = "scorings.json"
+database_url = "unused"
+log_level = "debug"
+
+[subscriber]
+type = "udp"
+address = "0.0.0.0:8696"
+
+[publisher]
+# deterministic simulator contract address
+contract = "CCOTKT6O2UN7O4MTSTVSSJ5SU2AHIFIYLPCXK7Q236I3TLGP7AEGIGOS"
+server = "http://stellar-local:8000/soroban/rpc"
+network = "Standalone Network ; February 2017"
+max_fee = 50000
+always_send = true
+transaction_validity_seconds = 60
+freq_pub_seconds = 2
+
