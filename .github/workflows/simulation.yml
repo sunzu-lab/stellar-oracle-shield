@@ -1,0 +1,79 @@
+name: Simulation Suite
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          targets: wasm32v1-none
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build contracts
+        run: cargo build-wasm
+
+      - name: Install Poetry
+        run: |
+          python3 --version
+          pipx install poetry
+
+      - name: Install dependencies
+        working-directory: simulation
+        run: poetry install --no-interaction
+
+      - name: Generate bindings
+        working-directory: simulation
+        run: poetry run generate-bindings
+
+      - name: Start Stellar node
+        working-directory: simulation
+        run: ./start-local-node
+
+      - name: Start scorer
+        working-directory: simulation
+        run: ./start-local-scorer
+
+      - name: Run simulation tests
+        working-directory: simulation
+        timeout-minutes: 15
+        run: poetry run pytest -v
+
+      - name: Docker logs on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker logs stellar-local --tail 200 || true
+          docker logs scorer-local --tail 200 || true
+
+      - name: Stop scorer
+        if: always()
+        working-directory: simulation
+        run: ./stop-local-scorer
+
+      - name: Stop Stellar node
+        if: always()
+        working-directory: simulation
+        run: ./stop-local-node
