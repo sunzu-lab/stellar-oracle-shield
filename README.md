@@ -369,7 +369,7 @@ For on-chain integrations, use the published Rust client crate:
 
 ```toml
 [dependencies]
-stellar-oracle-shield-client = "0.1.3"
+stellar-oracle-shield-client = "0.2.0"
 ```
 
 The client exposes the Shield contract interface and the `Status` and `Error` types.
