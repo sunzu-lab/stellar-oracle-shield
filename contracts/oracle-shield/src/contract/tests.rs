@@ -104,7 +104,7 @@ fn test_set_score() {
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    client.set_score(&base, &quote, &12_u32);
+    client.set_score(&operator_address, &base, &quote, &12_u32);
     assert_eq!(
         env.auths(),
         [contract_auth_for(
@@ -112,33 +112,6 @@ fn test_set_score() {
             operator_address.clone(),
             contract_id.clone(),
             "set_score",
-            (base.clone(), quote.clone(), 12_u32,)
-        )]
-    );
-
-    assert_eq!(client.get_score(&base, &quote), 12);
-
-    let ret = client.try_set_score(&base, &quote, &12345678_u32);
-    assert_eq!(ret, Err(Ok(Error::ScoreBounds)));
-}
-
-#[test]
-fn test_set_score_from() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, contract_id, operator_address, _) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    client.set_score_from(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            operator_address.clone(),
-            contract_id.clone(),
-            "set_score_from",
             (
                 operator_address.clone(),
                 base.clone(),
@@ -150,12 +123,12 @@ fn test_set_score_from() {
 
     assert_eq!(client.get_score(&base, &quote), 12);
 
-    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12345678_u32);
+    let ret = client.try_set_score(&operator_address, &base, &quote, &12345678_u32);
     assert_eq!(ret, Err(Ok(Error::ScoreBounds)));
 }
 
 #[test]
-fn test_set_score_from_unauthorized() {
+fn test_set_score_unauthorized() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -164,7 +137,7 @@ fn test_set_score_from_unauthorized() {
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12_u32);
+    let ret = client.try_set_score(&operator_address, &base, &quote, &12_u32);
     assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
 }
 
@@ -178,7 +151,7 @@ fn test_add_operator() {
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12_u32);
+    let ret = client.try_set_score(&operator_address, &base, &quote, &12_u32);
     assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
 
     client.add_operator(&operator_address);
@@ -193,7 +166,7 @@ fn test_add_operator() {
         )]
     );
 
-    let ret = client.try_set_score_from(&operator_address, &base, &quote, &13_u32);
+    let ret = client.try_set_score(&operator_address, &base, &quote, &13_u32);
     assert_eq!(ret, Ok(Ok(())));
 }
 
@@ -208,7 +181,7 @@ fn test_remove_operator() {
 
     client.add_operator(&operator_address);
 
-    let ret = client.try_set_score_from(&operator_address, &base, &quote, &13_u32);
+    let ret = client.try_set_score(&operator_address, &base, &quote, &13_u32);
     assert_eq!(ret, Ok(Ok(())));
 
     client.remove_operator(&operator_address);
@@ -223,7 +196,7 @@ fn test_remove_operator() {
         )]
     );
 
-    let ret = client.try_set_score_from(&operator_address, &base, &quote, &12_u32);
+    let ret = client.try_set_score(&operator_address, &base, &quote, &12_u32);
     assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
 }
 
@@ -240,11 +213,11 @@ fn test_set_operators() {
 
     client.add_operator(&operator1_address);
 
-    let ret = client.try_set_score_from(&operator1_address, &base, &quote, &12_u32);
+    let ret = client.try_set_score(&operator1_address, &base, &quote, &12_u32);
     assert_eq!(ret, Ok(Ok(())));
-    let ret = client.try_set_score_from(&operator2_address, &base, &quote, &13_u32);
+    let ret = client.try_set_score(&operator2_address, &base, &quote, &13_u32);
     assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-    let ret = client.try_set_score_from(&operator3_address, &base, &quote, &13_u32);
+    let ret = client.try_set_score(&operator3_address, &base, &quote, &13_u32);
     assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
 
     let operators = vec![
@@ -265,60 +238,12 @@ fn test_set_operators() {
         )]
     );
 
-    let ret = client.try_set_score_from(&operator1_address, &base, &quote, &12_u32);
+    let ret = client.try_set_score(&operator1_address, &base, &quote, &12_u32);
     assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-    let ret = client.try_set_score_from(&operator2_address, &base, &quote, &13_u32);
+    let ret = client.try_set_score(&operator2_address, &base, &quote, &13_u32);
     assert_eq!(ret, Ok(Ok(())));
-    let ret = client.try_set_score_from(&operator3_address, &base, &quote, &13_u32);
+    let ret = client.try_set_score(&operator3_address, &base, &quote, &13_u32);
     assert_eq!(ret, Ok(Ok(())));
-}
-
-#[test]
-fn test_set_operator() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let operator_address = Address::generate(&env);
-    let (client, contract_id, _, admin_address) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    assert!(
-        client
-            .try_set_score_from(&operator_address, &base, &quote, &12_u32)
-            .is_err()
-    );
-
-    assert_eq!(env.auths(), []);
-
-    client.set_operator_key(&operator_address);
-
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            admin_address.clone(),
-            contract_id.clone(),
-            "set_operator_key",
-            (operator_address.clone(),)
-        )]
-    );
-    assert!(
-        client
-            .try_set_score_from(&operator_address, &base, &quote, &12_u32)
-            .is_ok()
-    );
-
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            operator_address.clone(),
-            contract_id.clone(),
-            "set_score_from",
-            (&operator_address, &base, &quote, &12_u32,)
-        )]
-    );
 }
 
 #[test]
@@ -336,7 +261,7 @@ fn test_get_score() {
     );
     assert!(env.auths().is_empty());
 
-    client.set_score_from(&operator_address, &base, &quote, &12_u32);
+    client.set_score(&operator_address, &base, &quote, &12_u32);
 
     assert_eq!(client.get_score(&base, &quote), 12);
     assert!(env.auths().is_empty());
@@ -362,22 +287,22 @@ fn test_get_status() {
     );
     assert!(env.auths().is_empty());
 
-    client.set_score_from(&operator_address, &base, &quote, &0_u32);
+    client.set_score(&operator_address, &base, &quote, &0_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Unsafe);
 
-    client.set_score_from(&operator_address, &base, &quote, &32_u32);
+    client.set_score(&operator_address, &base, &quote, &32_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Unsafe);
 
-    client.set_score_from(&operator_address, &base, &quote, &33_u32);
+    client.set_score(&operator_address, &base, &quote, &33_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Degraded);
 
-    client.set_score(&base, &quote, &65_u32);
+    client.set_score(&operator_address, &base, &quote, &65_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Degraded);
 
-    client.set_score_from(&operator_address, &base, &quote, &66_u32);
+    client.set_score(&operator_address, &base, &quote, &66_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Healthy);
 
-    client.set_score_from(&operator_address, &base, &quote, &100_u32);
+    client.set_score(&operator_address, &base, &quote, &100_u32);
     assert_eq!(client.get_status(&base, &quote), Status::Healthy);
 
     assert_eq!(
@@ -397,7 +322,7 @@ fn test_event() {
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    client.set_score_from(&operator_address, &base, &quote, &0_u32);
+    client.set_score(&operator_address, &base, &quote, &0_u32);
     let event = env.events().all().filter_by_contract(&contract_id);
     let score_change = ScoreChange {
         base: base.clone(),
@@ -416,7 +341,7 @@ fn test_event() {
     ];
     assert_eq!(event.events(), &expected);
 
-    client.set_score_from(&operator_address, &base, &quote, &10_u32);
+    client.set_score(&operator_address, &base, &quote, &10_u32);
     let event = env.events().all().filter_by_contract(&contract_id);
     let score_change = ScoreChange {
         base: base.clone(),
@@ -426,7 +351,7 @@ fn test_event() {
     let expected = [score_change.to_xdr(&env, &contract_id)];
     assert_eq!(event.events(), &expected);
 
-    client.set_score_from(&operator_address, &base, &quote, &10_u32);
+    client.set_score(&operator_address, &base, &quote, &10_u32);
     assert!(
         env.events()
             .all()
@@ -435,7 +360,7 @@ fn test_event() {
             .is_empty()
     );
 
-    client.set_score_from(&operator_address, &base, &quote, &44_u32);
+    client.set_score(&operator_address, &base, &quote, &44_u32);
     let event = env.events().all().filter_by_contract(&contract_id);
     let score_change = ScoreChange {
         base: base.clone(),
@@ -454,7 +379,7 @@ fn test_event() {
     ];
     assert_eq!(event.events(), &expected);
 
-    client.set_score_from(&operator_address, &base, &quote, &66_u32);
+    client.set_score(&operator_address, &base, &quote, &66_u32);
     let events = env.events().all();
     let score_change_event = (
         contract_id.clone(),
@@ -522,7 +447,7 @@ fn test_max_staleness() {
     let base = usdc_circle_address(&env);
     let quote = xlm_address(&env);
 
-    client.set_score_from(&operator_address, &base, &quote, &12_u32);
+    client.set_score(&operator_address, &base, &quote, &12_u32);
     assert_eq!(client.get_score(&base, &quote), 12);
 
     env.ledger().with_mut(|ledger| {
@@ -541,7 +466,7 @@ fn test_max_staleness() {
     env.ledger().with_mut(|ledger| {
         ledger.timestamp += 2;
     });
-    client.set_score_from(&operator_address, &base, &quote, &12_u32);
+    client.set_score(&operator_address, &base, &quote, &12_u32);
     assert_eq!(client.get_score(&base, &quote), 12);
 }
 
@@ -725,7 +650,7 @@ fn test_set_scores_atomic() {
     let quote1 = xlm_address(&env);
     let quote2 = Address::generate(&env);
 
-    client.set_score_from(&operator_address, &base, &quote1, &12_u32);
+    client.set_score(&operator_address, &base, &quote1, &12_u32);
 
     // an invalid score anywhere in the batch rejects the whole batch
     let scores = vec![
