@@ -272,31 +272,6 @@ fn validation_pair_isolation() {
 }
 
 #[test]
-fn legacy_single_operator() {
-    let (env, base, quote) = setup_multi_operator_test();
-    let (client, ops) = build_multi_operator_contract_client(&env);
-
-    let outsider = Address::generate(&env);
-    assert_eq!(
-        client.try_set_score_from(&outsider, &base, &quote, &70),
-        Err(Ok(Error::UnauthorizedOperator))
-    );
-    assert_eq!(
-        client.try_set_score(&base, &quote, &70),
-        Err(Ok(Error::UnauthorizedOperator))
-    );
-
-    client.set_operator_key(&ops.get_unchecked(0));
-    client.set_score(&base, &quote, &66);
-    let expected = AggregatedScore::new(66, 100, 100, 1, 1).unwrap();
-    as_contract! {
-        env,
-        &client.address,
-        assert_eq!(Contract::get_inner_score(&env, &Pair(base.clone(), quote.clone())), Ok(expected));
-    }
-}
-
-#[test]
 fn future_report_is_excluded() {
     let (env, base, quote) = setup_multi_operator_test();
     let (client, ops) = build_multi_operator_contract_client(&env);

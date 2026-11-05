@@ -25,13 +25,6 @@ pub trait Contract {
     /// contract parameter set
     fn get_parameters(env: Env) -> Result<Parameters, Error>;
 
-    /// set operator address in legacy single operator mode
-    /// `operator_key` - Address
-    ///
-    /// restricted to admin
-    #[deprecated = "use set_operators with 1-element vector instead"]
-    fn set_operator_key(env: Env, operator_key: Address) -> Result<(), Error>;
-
     /// set operator addresses
     /// `operators` - Addresses
     ///
@@ -51,13 +44,19 @@ pub trait Contract {
     fn remove_operator(env: Env, operator: Address) -> Result<(), Error>;
 
     /// set score of a pair in legacy single operator mode
+    /// `operator` - operator generating the score
     /// `base` - SAC address of an asset
     /// `quote` - SAC address of an asset
     /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
     ///
     /// restricted to operator
-    #[deprecated = "use set_score_from instead"]
-    fn set_score(env: Env, base: Address, quote: Address, score: u32) -> Result<(), Error>;
+    fn set_score(
+        env: Env,
+        operator: Address,
+        base: Address,
+        quote: Address,
+        score: u32,
+    ) -> Result<(), Error>;
 
     /// scores for multiple pairs
     /// `operator` - operator generating scores
@@ -81,6 +80,7 @@ pub trait Contract {
     /// `score` - [0-100] scoring. 0 the more unsafe, 100 the healthier
     ///
     /// restricted to operator
+    #[deprecated = "use set_score instead"]
     fn set_score_from(
         env: Env,
         operator: Address,
