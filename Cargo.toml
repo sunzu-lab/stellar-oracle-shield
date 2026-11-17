@@ -10,11 +10,10 @@ version = "0.3.0"
 authors = ["Sun Zu Lab <contact@sunzulab.com>"]
 license = "Apache-2.0"
 edition = "2024"
-homepage = "https://github.com/sunzu-lab/stellar-oracle-shield"
 repository = "https://github.com/sunzu-lab/stellar-oracle-shield"
 
 [workspace.dependencies]
-soroban-sdk = "26"
+soroban-sdk = "28"
 stellar-oracle-shield-client = { path = "contracts/oracle-shield-client", version = "0.3.0" }
 stellar-oracle-shield        = { path = "contracts/oracle-shield",        version = "0.3.0" }
 
