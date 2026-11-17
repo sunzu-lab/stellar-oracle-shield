@@ -49,10 +49,14 @@
 
 mod contract_interface;
 mod error;
+mod governance_parameters;
+mod governance_parameters_constraints;
 mod parameters;
 mod status;
 
 pub use contract_interface::*;
 pub use error::*;
+pub use governance_parameters::*;
+pub use governance_parameters_constraints::*;
 pub use parameters::*;
 pub use status::*;
