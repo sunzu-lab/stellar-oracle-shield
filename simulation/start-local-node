@@ -16,32 +16,62 @@ docker run -d \
        ${IMAGE}:${TAG} \
        --local
 
-echo "Waiting for Stellar RPC to become healthy..."
+function wait_stellar_rpc() {
 
-MAX_ATTEMPTS=90
-RETRY_INTERVAL=2
+    echo "Waiting for Stellar RPC to become healthy..."
 
-for ((i=1; i<=MAX_ATTEMPTS; i++)); do
-    if curl --fail --silent --max-time 3 \
-        -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
-        "http://${LISTEN_ADDRESS}/rpc" \
-        | grep -q '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
+    MAX_ATTEMPTS=90
+    RETRY_INTERVAL=2
 
-        echo "Stellar RPC is ready!"
-        exit 0
-    fi
+    for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+        if curl --fail --silent --max-time 3 \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+                "http://${LISTEN_ADDRESS}/rpc" \
+                | grep -q '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
 
-    # Detect a container that exited during startup
-    if [[ "$(docker inspect -f '{{.State.Running}}' "${NAME}")" != "true" ]]; then
-        echo "ERROR: Stellar container stopped unexpectedly."
-        docker logs "${NAME}" --tail 100
-        exit 1
-    fi
+            echo "Stellar RPC is ready!"
+            return
+        fi
 
-    sleep "${RETRY_INTERVAL}"
-done
+        # Detect a container that exited during startup
+        if [[ "$(docker inspect -f '{{.State.Running}}' "${NAME}")" != "true" ]]; then
+            echo "ERROR: Stellar container stopped unexpectedly."
+            docker logs "${NAME}" --tail 100
+            exit 1
+        fi
 
-echo "ERROR: Stellar RPC did not become healthy within the timeout."
-docker logs "${NAME}" --tail 100
-exit 1
+        sleep "${RETRY_INTERVAL}"
+    done
+
+    echo "ERROR: Stellar RPC did not become healthy within the timeout."
+    docker logs "${NAME}" --tail 100
+    exit 1
+}
+
+function wait_friendbot() {
+    echo "Waiting for Friendbot to become ready..."
+
+    MAX_ATTEMPTS=90
+    RETRY_INTERVAL=2
+
+    for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+        STATUS=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+                      --max-time 3 "http://${LISTEN_ADDRESS}/friendbot" || true)
+
+        # Friendbot should return 400 (missing addr parameter)
+        if [[ "$STATUS" == "400" ]]; then
+            echo "Stellar Friendbot is ready!"
+            return
+        fi
+
+        sleep "${RETRY_INTERVAL}"
+    done
+
+    echo "ERROR: Stellar Friendbot did not become ready."
+    docker logs "${NAME}" --tail 100
+    exit 1
+}
+
+wait_stellar_rpc
+wait_friendbot

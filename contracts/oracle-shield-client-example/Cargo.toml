@@ -5,7 +5,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-homepage.workspace = true
 repository.workspace = true
 publish = false
 
@@ -14,12 +13,12 @@ crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { version = "26" }
+soroban-sdk = { version = "28" }
 stellar-oracle-shield-client  = { workspace = true }
 # for your own contracts, use officially published crate instead
-#stellar-oracle-shield-client  = { version = "0.2.0" }
+#stellar-oracle-shield-client  = { version = "0.3.0" }
 
 
 [dev-dependencies]
-soroban-sdk = { version = "26", features = ["testutils"] }
+soroban-sdk = { version = "28", features = ["testutils"] }
 stellar-oracle-shield  = { workspace = true }

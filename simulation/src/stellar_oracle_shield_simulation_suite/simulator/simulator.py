@@ -167,8 +167,24 @@ class Simulator:
         )
 
         spec = ContractSpec.from_wasm(wasm)
+        # deactivate timelock for simulation
         constructor_args = build_constructor_args(
-            spec, {"admin": scval.to_address(deployer.public_key)}
+            spec,
+            {
+                "admin": scval.to_address(deployer.public_key),
+                "governance_parameters": scval.to_struct(
+                    {
+                        "timelock_delay_seconds": scval.to_uint64(0),
+                        "execution_window_seconds": scval.to_uint64(3600),
+                    }
+                ),
+                "governance_constraints": scval.to_struct(
+                    {
+                        "min_timelock_delay_seconds": scval.to_uint64(0),
+                        "max_timelock_delay_seconds": scval.to_uint64(86400),
+                    }
+                ),
+            },
         )
 
         contract_id = ContractClient.create_contract(
@@ -431,6 +447,11 @@ class Simulator:
 
         return self.user
 
+    def get_unauthorized_admin(self) -> Admin:
+        user = self.get_user()
+
+        return Admin(user.account, user.client)
+
     def get_scorer_account(self) -> Keypair:
         keypair = Keypair.from_public_key(self.config.scorer.public_key)
         return self.create_funded_account(keypair=keypair)
@@ -438,3 +459,13 @@ class Simulator:
     def get_indicator_engine(self) -> IndicatorEngine:
         """Return indicator engine simulator instance"""
         return IndicatorEngine(self.config.scorer)
+
+    def upload_contract(self, wasm: bytes) -> bytes:
+        user = self.get_user()
+        return ContractClient.upload_contract_wasm(
+            contract=wasm,
+            source=user.public_key,
+            signer=user.account,
+            soroban_server=self.server,
+            network_passphrase=self.config.node.network_passphrase,
+        )

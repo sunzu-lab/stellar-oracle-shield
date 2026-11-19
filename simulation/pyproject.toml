@@ -1,6 +1,6 @@
 [tool.poetry]
 name        = "stellar-oracle-shield-simulation-suite"
-version     = "1.0.0"
+version     = "1.1.0"
 description = "Stellar Oracle Shield exploit and stress simulation suite"
 authors     = ["SUN ZU Lab <contact@sunzulab.com>"]
 packages    = [
@@ -45,7 +45,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "stellar_oracle_shield_client.bindings"
-disable_error_code = ["attr-defined"]
+disable_error_code = ["attr-defined", "assignment", "func-returns-value", "str-bytes-safe"]
 
 [tool.ruff]
 target-version = "py310"

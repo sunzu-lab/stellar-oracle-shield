@@ -16,8 +16,6 @@ pub enum Error {
     StaleInput = 704,
     /// conversion error - unlikely
     ConversionError = 705,
-    /// max staleness not set (shouldn't happen)
-    NoMaxStalenessSet = 706,
     /// operator is not registered
     UnauthorizedOperator = 707,
     /// quorum not reached
@@ -26,4 +24,8 @@ pub enum Error {
     TimeLocked = 709,
     /// expired operation - too late
     Expired = 710,
+    /// a scheduled operation is already in progress - cancel first
+    ScheduledOperationInProgress = 711,
+    /// invalid parameter
+    InvalidParam = 712,
 }

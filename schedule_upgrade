@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## helper - upgrade current built wasm with alias `oracle_shield`
+## helper - schedule upgrading of current built wasm with alias `stellar_oracle_shield`
 ##
 ## USAGE
 ##
@@ -45,6 +45,6 @@ stellar contract invoke \
         --source-account ${source_account} \
         ${network_param} \
         -- \
-        upgrade \
+        schedule_upgrade \
         --new_wasm_hash $wasm_hash
 
