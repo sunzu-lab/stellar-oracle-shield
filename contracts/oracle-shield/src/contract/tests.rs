@@ -1,11 +1,20 @@
 #![cfg(test)]
 
+extern crate std;
+
 use {
     super::*,
     soroban_sdk::testutils::{
-        Address as AddressTrait, AuthorizedFunction, AuthorizedInvocation, Events, Ledger,
+        Address as AddressTrait, AuthorizedFunction, AuthorizedInvocation, ContractEvents, Events,
+        Ledger,
     },
-    soroban_sdk::{Env, IntoVal, Symbol, Val, Vec, events::Event, vec},
+    soroban_sdk::{
+        Env, IntoVal, Symbol, TryFromVal, Val, Vec,
+        events::Event,
+        vec,
+        xdr::{ContractEvent, ContractEventBody, ScVal},
+    },
+    std::string::ToString,
 };
 
 fn contract_auth_for(
@@ -28,18 +37,72 @@ fn contract_auth_for(
     )
 }
 
-fn build_contract_client(env: &Env) -> (ContractClient<'_>, Address, Address, Address) {
-    let admin_address = Address::generate(&env);
+fn test_default_parameters(env: &Env) -> Parameters {
     let operator_address = Address::generate(&env);
     let max_staleness = 60_u64;
-    let max_deviation: Option<u32> = None;
-    let quorum: Option<u32> = None;
-    let constructor_args = (
-        admin_address.clone(),
+    let max_deviation: u32 = 5;
+    let quorum: u32 = 1;
+    let operators = Map::from_array(env, [(operator_address.clone(), ())]);
+    Parameters {
         max_staleness,
         max_deviation,
         quorum,
-        Some(vec![env, operator_address.clone()]),
+        operators,
+    }
+}
+
+fn test_default_governance_parameters() -> GovernanceParameters {
+    let timelock_delay_seconds = 6_u64;
+    let execution_window_seconds = 86_400_u64;
+    GovernanceParameters {
+        timelock_delay_seconds,
+        execution_window_seconds,
+    }
+}
+
+fn test_default_governamce_parameters_constraints() -> GovernanceParametersConstraints {
+    let min_timelock_delay_seconds = 3_u64;
+    let max_timelock_delay_seconds = 12_u64;
+
+    GovernanceParametersConstraints {
+        min_timelock_delay_seconds,
+        max_timelock_delay_seconds,
+    }
+}
+
+fn build_contract_client(env: &Env) -> (ContractClient<'_>, Address, Address, Address) {
+    let admin_address = Address::generate(&env);
+    let parameters = Some(test_default_parameters(env));
+    let governance_parameters = Some(test_default_governance_parameters());
+    let governance_parameters_constraints = Some(test_default_governamce_parameters_constraints());
+    build_contract_client_with_parameters(
+        env,
+        admin_address,
+        parameters,
+        governance_parameters,
+        governance_parameters_constraints,
+    )
+}
+
+fn build_contract_client_with_parameters(
+    env: &Env,
+    admin_address: Address,
+    parameters: Option<Parameters>,
+    governance_parameters: Option<GovernanceParameters>,
+    governance_parameters_constraints: Option<GovernanceParametersConstraints>,
+) -> (ContractClient<'_>, Address, Address, Address) {
+    let operator_address = parameters
+        .as_ref()
+        .unwrap()
+        .operators
+        .keys()
+        .first()
+        .unwrap();
+    let constructor_args = (
+        admin_address.clone(),
+        parameters,
+        governance_parameters,
+        governance_parameters_constraints,
     );
     let contract_id = env.register(Contract, constructor_args);
 
@@ -65,22 +128,120 @@ fn usdc_circle_address(env: &Env) -> Address {
     )
 }
 
+/// helpers on contract
+trait WaitTimelock {
+    /// ensure execute_xxx won't trigger a TimedLocked error
+    fn _wait_timelock(self: &Self);
+
+    /// direct max staleness setter (bypass time locked schedule_set_max_staleness)
+    fn _set_max_staleness(self: &Self, max_staleness: u64);
+
+    /// direct quorum setter (bypass time locked schedule_set_quorum)
+    fn _set_quorum(self: &Self, quorum: u32);
+
+    /// direct operators setter (bypass time locked schedule_add_operator)
+    fn _add_operator(self: &Self, operator: Address);
+
+    /// direct operators setter (bypass time locked schedule_remove_operator)
+    fn _remove_operator(self: &Self, operator: Address);
+}
+
+impl<'a> WaitTimelock for ContractClient<'a> {
+    fn _wait_timelock(self: &Self) {
+        let timelock_delay_seconds = self.get_governance_params().timelock_delay_seconds;
+        self.env
+            .ledger()
+            .set_timestamp(self.env.ledger().timestamp() + timelock_delay_seconds);
+    }
+
+    fn _set_max_staleness(self: &Self, max_staleness: u64) {
+        let mut parameters = self.get_parameters();
+        parameters.max_staleness = max_staleness;
+        self._set_parameters(parameters);
+    }
+
+    fn _set_quorum(self: &Self, quorum: u32) {
+        let mut parameters = self.get_parameters();
+        parameters.quorum = quorum;
+        self._set_parameters(parameters);
+    }
+
+    fn _add_operator(self: &Self, operator: Address) {
+        let mut parameters = self.get_parameters();
+        parameters.operators.remove(operator);
+        self._set_parameters(parameters);
+    }
+
+    fn _remove_operator(self: &Self, operator: Address) {
+        let mut parameters = self.get_parameters();
+        parameters.operators.remove(operator);
+        self._set_parameters(parameters);
+    }
+}
+
+/// give access to internal methods for testing purpose
+trait ContractPrivateMethods {
+    fn _get_inner_score(
+        self: &Self,
+        base: &Address,
+        quote: &Address,
+    ) -> Result<AggregatedScore, Error>;
+    fn _set_parameters(self: &Self, parameters: Parameters);
+}
+
+impl<'a> ContractPrivateMethods for ContractClient<'a> {
+    fn _get_inner_score(
+        self: &Self,
+        base: &Address,
+        quote: &Address,
+    ) -> Result<AggregatedScore, Error> {
+        let body = || Contract::get_inner_score(&self.env, &Pair(base.clone(), quote.clone()));
+        self.env.as_contract(&self.address, body)
+    }
+
+    fn _set_parameters(self: &Self, parameters: Parameters) {
+        let body = || {
+            Contract::set_parameters(&self.env, parameters);
+        };
+        self.env.as_contract(&self.address, body)
+    }
+}
+
+fn get_topics(env: &Env, contract_event: &ContractEvent) -> std::vec::Vec<std::string::String> {
+    let scval_to_symbol = |s: &ScVal| -> std::string::String {
+        match s {
+            ScVal::Symbol(s) => Symbol::try_from_val(env, s).unwrap().to_string(),
+            _ => std::string::String::default(),
+        }
+    };
+
+    match &contract_event.body {
+        ContractEventBody::V0(body) => body.topics.iter().map(scval_to_symbol).collect(),
+    }
+}
+
+fn get_all_topics(env: &Env, events: &ContractEvents) -> std::vec::Vec<std::string::String> {
+    events
+        .events()
+        .iter()
+        .flat_map(|e| get_topics(env, e))
+        .collect()
+}
+
 #[test]
 fn test_constructor() {
     let env = Env::default();
     env.mock_all_auths();
 
     let admin_address = Address::generate(&env);
-    let max_staleness = 60_u64;
-    let max_deviation: Option<u32> = None;
-    let quorum: Option<u32> = None;
-    let operator_address = Address::generate(&env);
+    let parameters = Some(test_default_parameters(&env));
+    let governance_parameters = Some(test_default_governance_parameters());
+    let governance_parameters_constraints = Some(test_default_governamce_parameters_constraints());
     let constructor_args = (
         admin_address.clone(),
-        max_staleness,
-        max_deviation,
-        quorum,
-        Some(vec![&env, operator_address]),
+        parameters,
+        governance_parameters,
+        governance_parameters_constraints,
     );
     let contract_id = env.register(Contract, constructor_args.clone());
     assert_eq!(
@@ -96,573 +257,92 @@ fn test_constructor() {
 }
 
 #[test]
-fn test_set_score() {
+#[should_panic(expected = "constructor invocation has failed")]
+fn test_constructor_invalid_governance() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, contract_id, operator_address, _) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
+    let admin_address = Address::generate(&env);
+    let mut parameters = test_default_parameters(&env);
+    let governance_parameters = Some(test_default_governance_parameters());
+    let governance_parameters_constraints = Some(test_default_governamce_parameters_constraints());
 
-    client.set_score(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            operator_address.clone(),
-            contract_id.clone(),
-            "set_score",
-            (
-                operator_address.clone(),
-                base.clone(),
-                quote.clone(),
-                12_u32,
-            )
-        )]
-    );
+    // constructor - invalid parameters
+    parameters.quorum = 64_u32;
+    let parameters = Some(parameters);
 
-    assert_eq!(client.get_score(&base, &quote), 12);
-
-    let ret = client.try_set_score(&operator_address, &base, &quote, &12345678_u32);
-    assert_eq!(ret, Err(Ok(Error::ScoreBounds)));
-}
-
-#[test]
-fn test_set_score_unauthorized() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let operator_address = Address::generate(&env);
-    let (client, _, _, _) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    let ret = client.try_set_score(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-}
-
-#[test]
-fn test_add_operator() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let operator_address = Address::generate(&env);
-    let (client, contract_id, _, admin_address) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    let ret = client.try_set_score(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-
-    client.add_operator(&operator_address);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            admin_address.clone(),
-            contract_id.clone(),
-            "add_operator",
-            (operator_address.clone(),)
-        )]
-    );
-
-    let ret = client.try_set_score(&operator_address, &base, &quote, &13_u32);
-    assert_eq!(ret, Ok(Ok(())));
-}
-
-#[test]
-fn test_remove_operator() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, contract_id, operator_address, admin_address) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    client.add_operator(&operator_address);
-
-    let ret = client.try_set_score(&operator_address, &base, &quote, &13_u32);
-    assert_eq!(ret, Ok(Ok(())));
-
-    client.remove_operator(&operator_address);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            admin_address.clone(),
-            contract_id.clone(),
-            "remove_operator",
-            (operator_address.clone(),)
-        )]
-    );
-
-    let ret = client.try_set_score(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-}
-
-#[test]
-fn test_set_operators() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let operator2_address = Address::generate(&env);
-    let operator3_address = Address::generate(&env);
-    let (client, contract_id, operator1_address, admin_address) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    client.add_operator(&operator1_address);
-
-    let ret = client.try_set_score(&operator1_address, &base, &quote, &12_u32);
-    assert_eq!(ret, Ok(Ok(())));
-    let ret = client.try_set_score(&operator2_address, &base, &quote, &13_u32);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-    let ret = client.try_set_score(&operator3_address, &base, &quote, &13_u32);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-
-    let operators = vec![
+    let _ = build_contract_client_with_parameters(
         &env,
-        operator2_address.clone(),
-        operator2_address.clone(),
-        operator3_address.clone(),
-    ];
-    client.set_operators(&operators);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            admin_address.clone(),
-            contract_id.clone(),
-            "set_operators",
-            (operators,)
-        )]
-    );
-
-    let ret = client.try_set_score(&operator1_address, &base, &quote, &12_u32);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-    let ret = client.try_set_score(&operator2_address, &base, &quote, &13_u32);
-    assert_eq!(ret, Ok(Ok(())));
-    let ret = client.try_set_score(&operator3_address, &base, &quote, &13_u32);
-    assert_eq!(ret, Ok(Ok(())));
-}
-
-#[test]
-fn test_get_score() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, _, operator_address, _) = build_contract_client(&env);
-
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-    assert_eq!(
-        client.try_get_score(&base, &quote),
-        Err(Ok(Error::PairNotCovered))
-    );
-    assert!(env.auths().is_empty());
-
-    client.set_score(&operator_address, &base, &quote, &12_u32);
-
-    assert_eq!(client.get_score(&base, &quote), 12);
-    assert!(env.auths().is_empty());
-
-    assert_eq!(
-        client.try_get_score(&quote, &quote),
-        Err(Ok(Error::PairNotCovered))
+        admin_address,
+        parameters,
+        governance_parameters,
+        governance_parameters_constraints,
     );
 }
 
 #[test]
-fn test_get_status() {
+#[should_panic(expected = "constructor invocation has failed")]
+fn test_constructor_invalid_parameters() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _, operator_address, _) = build_contract_client(&env);
+    let admin_address = Address::generate(&env);
+    let parameters = Some(test_default_parameters(&env));
 
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-    assert_eq!(
-        client.try_get_status(&base, &quote),
-        Err(Ok(Error::PairNotCovered))
-    );
-    assert!(env.auths().is_empty());
+    let min_timelock_delay_seconds = 64_u64;
+    let max_timelock_delay_seconds = 128_u64;
 
-    client.set_score(&operator_address, &base, &quote, &0_u32);
-    assert_eq!(client.get_status(&base, &quote), Status::Unsafe);
-
-    client.set_score(&operator_address, &base, &quote, &32_u32);
-    assert_eq!(client.get_status(&base, &quote), Status::Unsafe);
-
-    client.set_score(&operator_address, &base, &quote, &33_u32);
-    assert_eq!(client.get_status(&base, &quote), Status::Degraded);
-
-    client.set_score(&operator_address, &base, &quote, &65_u32);
-    assert_eq!(client.get_status(&base, &quote), Status::Degraded);
-
-    client.set_score(&operator_address, &base, &quote, &66_u32);
-    assert_eq!(client.get_status(&base, &quote), Status::Healthy);
-
-    client.set_score(&operator_address, &base, &quote, &100_u32);
-    assert_eq!(client.get_status(&base, &quote), Status::Healthy);
-
-    assert_eq!(
-        client.try_get_status(&quote, &quote),
-        Err(Ok(Error::PairNotCovered))
-    );
-}
-
-#[test]
-fn test_event() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, _, operator_address, _) = build_contract_client(&env);
-    let contract_id = client.address.clone();
-
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    client.set_score(&operator_address, &base, &quote, &0_u32);
-    let event = env.events().all().filter_by_contract(&contract_id);
-    let score_change = ScoreChange {
-        base: base.clone(),
-        quote: quote.clone(),
-        score: 0,
-    };
-    let status_change = StatusChange {
-        base: base.clone(),
-        quote: quote.clone(),
-        status: Status::Unsafe,
-    };
-
-    let expected = [
-        score_change.to_xdr(&env, &contract_id),
-        status_change.to_xdr(&env, &contract_id),
-    ];
-    assert_eq!(event.events(), &expected);
-
-    client.set_score(&operator_address, &base, &quote, &10_u32);
-    let event = env.events().all().filter_by_contract(&contract_id);
-    let score_change = ScoreChange {
-        base: base.clone(),
-        quote: quote.clone(),
-        score: 10,
-    };
-    let expected = [score_change.to_xdr(&env, &contract_id)];
-    assert_eq!(event.events(), &expected);
-
-    client.set_score(&operator_address, &base, &quote, &10_u32);
-    assert!(
-        env.events()
-            .all()
-            .filter_by_contract(&contract_id)
-            .events()
-            .is_empty()
-    );
-
-    client.set_score(&operator_address, &base, &quote, &44_u32);
-    let event = env.events().all().filter_by_contract(&contract_id);
-    let score_change = ScoreChange {
-        base: base.clone(),
-        quote: quote.clone(),
-        score: 44,
-    };
-    let status_change = StatusChange {
-        base: base.clone(),
-        quote: quote.clone(),
-        status: Status::Degraded,
-    };
-
-    let expected = [
-        score_change.to_xdr(&env, &contract_id),
-        status_change.to_xdr(&env, &contract_id),
-    ];
-    assert_eq!(event.events(), &expected);
-
-    client.set_score(&operator_address, &base, &quote, &66_u32);
-    let events = env.events().all();
-    let score_change_event = (
-        contract_id.clone(),
-        (
-            Symbol::new(&env, "score_change"),
-            base.clone(),
-            quote.clone(),
-        )
-            .into_val(&env),
-        66_u32.into_val(&env),
-    );
-    let status_change_event = (
-        contract_id,
-        (Symbol::new(&env, "status_change"), base, quote).into_val(&env),
-        Status::Healthy.into_val(&env),
-    );
-    let expected = vec![&env, score_change_event, status_change_event];
-
-    assert_eq!(events, expected)
-}
-
-#[test]
-fn test_parameters_change_event() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, contract_id, _, _) = build_contract_client(&env);
-
-    client.set_max_staleness(&300_u64);
-    let event = env.events().all().filter_by_contract(&contract_id);
-    let parameters = Parameters {
-        max_staleness: 300,
-        ..Parameters::default()
-    };
-    let parameters_change = ParametersChange { parameters };
-    let expected = [parameters_change.to_xdr(&env, &contract_id)];
-    assert_eq!(event.events(), &expected);
-}
-
-#[test]
-fn test_max_staleness() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, _, operator_address, _) = build_contract_client(&env);
-    let contract_id = client.address.clone();
-
-    let val: Option<u64> = env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::Parameters)
-            .map(|p: Parameters| p.max_staleness)
-    });
-    assert_eq!(val, Some(60_u64));
-
-    client.set_max_staleness(&300_u64);
-    let val: Option<u64> = env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::Parameters)
-            .map(|p: Parameters| p.max_staleness)
-    });
-    assert_eq!(val, Some(300_u64));
-
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-
-    client.set_score(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(client.get_score(&base, &quote), 12);
-
-    env.ledger().with_mut(|ledger| {
-        ledger.timestamp += 100;
-    });
-    assert_eq!(client.get_score(&base, &quote), 12);
-
-    env.ledger().with_mut(|ledger| {
-        ledger.timestamp += 201;
-    });
-    assert_eq!(
-        client.try_get_score(&base, &quote),
-        Err(Ok(Error::StaleInput))
-    );
-
-    env.ledger().with_mut(|ledger| {
-        ledger.timestamp += 2;
-    });
-    client.set_score(&operator_address, &base, &quote, &12_u32);
-    assert_eq!(client.get_score(&base, &quote), 12);
-}
-
-#[test]
-fn test_admin_handover() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let new_admin_address = Address::generate(&env);
-    let another_operator = Address::generate(&env);
-    let valid_after = env.ledger().timestamp() + ADMIN_TRANSFER_DELAY_SECONDS;
-
-    let (client, contract_id, _, admin_address) = build_contract_client(&env);
-    client.hand_over_admin(&new_admin_address);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            admin_address.clone(),
-            contract_id.clone(),
-            "hand_over_admin",
-            (new_admin_address.clone(),)
-        )]
-    );
-    let events = env.events().all();
-    let admin = admin_address.clone();
-    let candidate = (new_admin_address.clone(), valid_after);
-    let admin_transfer_initiated_event = AdminTransferInitiated { admin, candidate };
-    let expected = [admin_transfer_initiated_event.to_xdr(&env, &contract_id)];
-    assert_eq!(events, expected);
-
-    client.add_operator(&another_operator);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            admin_address.clone(), // the point
-            contract_id.clone(),
-            "add_operator",
-            (another_operator.clone(),)
-        )]
-    );
-
-    env.ledger()
-        .set_timestamp(env.ledger().timestamp() + ADMIN_TRANSFER_DELAY_SECONDS);
-
-    client.accept_admin();
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            new_admin_address.clone(),
-            contract_id.clone(),
-            "accept_admin",
-            ()
-        )]
-    );
-    let events = env.events().all();
-    let old_admin = admin_address.clone();
-    let new_admin = new_admin_address.clone();
-    let admin_transfered_event = AdminTransfered {
-        old_admin,
-        new_admin,
-    };
-    let expected = [admin_transfered_event.to_xdr(&env, &contract_id)];
-    assert_eq!(events, expected);
-
-    client.add_operator(&another_operator);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            new_admin_address.clone(), // the point
-            contract_id.clone(),
-            "add_operator",
-            (another_operator.clone(),)
-        )]
-    );
-}
-
-#[test]
-fn test_admin_handover_timelock() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let new_admin_address = Address::generate(&env);
-
-    let (client, _, _, _) = build_contract_client(&env);
-    client.hand_over_admin(&new_admin_address);
-
-    // too soon
-    let ret = client.try_accept_admin();
-    assert_eq!(ret, Err(Ok(Error::TimeLocked)));
-
-    env.ledger().with_mut(|l| {
-        l.sequence_number += ADMIN_TRANSFER_TTL + 1;
+    let governance_parameters_constraints = Some(GovernanceParametersConstraints {
+        min_timelock_delay_seconds,
+        max_timelock_delay_seconds,
     });
 
-    // too late
-    let ret = client.try_accept_admin();
-    assert_eq!(ret, Err(Ok(Error::Expired)));
-}
+    // constructor - timelock out of constraint range
+    let timelock_delay_seconds = 0_u64;
+    let execution_window_seconds = 86_400_u64;
+    let governance_parameters = Some(GovernanceParameters {
+        timelock_delay_seconds,
+        execution_window_seconds,
+    });
 
-#[test]
-fn test_admin_handover_cancellation() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let new_admin_address = Address::generate(&env);
-    let valid_after = env.ledger().timestamp() + ADMIN_TRANSFER_DELAY_SECONDS;
-
-    let (client, contract_id, _, admin_address) = build_contract_client(&env);
-    client.hand_over_admin(&new_admin_address);
-
-    client.cancel_hand_over_admin();
-    let events = env.events().all();
-    let admin = admin_address.clone();
-    let candidate = (new_admin_address.clone(), valid_after);
-    let admin_transfer_cancelled_event = AdminTransferCancelled { admin, candidate };
-    let expected = [admin_transfer_cancelled_event.to_xdr(&env, &contract_id)];
-    assert_eq!(events, expected);
-
-    // too late
-    let ret = client.try_accept_admin();
-    assert_eq!(ret, Err(Ok(Error::Expired)));
-}
-
-#[test]
-fn test_set_scores() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, contract_id, operator_address, _) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote1 = xlm_address(&env);
-    let quote2 = Address::generate(&env);
-    let scores = vec![
+    let _ = build_contract_client_with_parameters(
         &env,
-        (base.clone(), quote1.clone(), 12_u32),
-        (base.clone(), quote2.clone(), 80_u32),
-    ];
-
-    client.set_scores(&operator_address, &scores);
-    assert_eq!(
-        env.auths(),
-        [contract_auth_for(
-            &env,
-            operator_address.clone(),
-            contract_id.clone(),
-            "set_scores",
-            (operator_address.clone(), scores.clone())
-        )]
+        admin_address,
+        parameters,
+        governance_parameters,
+        governance_parameters_constraints,
     );
-
-    assert_eq!(client.get_score(&base, &quote1), 12);
-    assert_eq!(client.get_score(&base, &quote2), 80);
 }
 
 #[test]
-fn test_set_scores_unauthorized() {
+#[should_panic(expected = "constructor invocation has failed")]
+fn test_constructor_invalid_governance_constraints() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let operator_address = Address::generate(&env);
-    let (client, _, _, _) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote = xlm_address(&env);
-    let scores = vec![&env, (base, quote, 12_u32)];
+    let admin_address = Address::generate(&env);
+    let parameters = Some(test_default_parameters(&env));
+    let governance_parameters = Some(test_default_governance_parameters());
 
-    let ret = client.try_set_scores(&operator_address, &scores);
-    assert_eq!(ret, Err(Ok(Error::UnauthorizedOperator)));
-}
+    // constructor - invalid range
+    let min_timelock_delay_seconds = 64_u64;
+    let max_timelock_delay_seconds = 0_u64;
 
-#[test]
-fn test_set_scores_atomic() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let governance_parameters_constraints = Some(GovernanceParametersConstraints {
+        min_timelock_delay_seconds,
+        max_timelock_delay_seconds,
+    });
 
-    let (client, _, operator_address, _) = build_contract_client(&env);
-    let base = usdc_circle_address(&env);
-    let quote1 = xlm_address(&env);
-    let quote2 = Address::generate(&env);
-
-    client.set_score(&operator_address, &base, &quote1, &12_u32);
-
-    // an invalid score anywhere in the batch rejects the whole batch
-    let scores = vec![
+    let _ = build_contract_client_with_parameters(
         &env,
-        (base.clone(), quote1.clone(), 20_u32),
-        (base.clone(), quote2.clone(), 101_u32),
-    ];
-    let ret = client.try_set_scores(&operator_address, &scores);
-    assert_eq!(ret, Err(Ok(Error::ScoreBounds)));
-
-    assert_eq!(client.get_score(&base, &quote1), 12);
-    assert!(client.try_get_score(&base, &quote2).is_err());
+        admin_address,
+        parameters,
+        governance_parameters,
+        governance_parameters_constraints,
+    );
 }
 
+mod client;
+mod governance;
 mod quorum;
+mod scoring;

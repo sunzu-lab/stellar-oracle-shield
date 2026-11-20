@@ -4,18 +4,15 @@ from stellar_oracle_shield_client.bindings import (
     StatusKind as OracleShieldStatusKind,
 )
 
+from .client import ClientAccount
 
-class User:
 
-    def __init__(self, account: Keypair, client: OracleShieldClient):
-        self.account = account
-        self.client = client
+class User(ClientAccount):
 
     def version(self) -> str:
         """retrieve the version of the contract"""
-        muxed_account = MuxedAccount(self.account.public_key)
         version = self.client.version(
-            muxed_account,
+            self.public_key,
         ).result()
 
         if isinstance(version, xdr.SCVal):
@@ -33,11 +30,10 @@ class User:
         - pair is not covered
         - no fresh operator reports remain
         - median status consensus is below quorum"""
-        muxed_account = MuxedAccount(self.account.public_key)
         score = self.client.get_score(
             base,
             quote,
-            muxed_account,
+            self.public_key,
         ).result()
 
         if isinstance(score, xdr.SCVal):
@@ -57,11 +53,10 @@ class User:
         - pair is not covered
         - no fresh operator reports remain
         - median status consensus is below quorum"""
-        muxed_account = MuxedAccount(self.account.public_key)
         status = self.client.get_status(
             base,
             quote,
-            muxed_account,
+            self.public_key,
         ).result()
 
         if isinstance(status, xdr.SCVal):

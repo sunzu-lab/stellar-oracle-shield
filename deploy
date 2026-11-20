@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## helper - deploy current built wasm with alias `oracle_shield`
+## helper - deploy current built wasm with alias `stellar_oracle_shield`
 ##
 ## USAGE
 ##

@@ -15,6 +15,10 @@ class DeterministicSimulator(Simulator):
     def __init__(self, config: Config):
         super().__init__(config)
 
+        # ensure disclosed private key account won't be used outside standalone network
+        if config.node.network_passphrase != "Standalone Network ; February 2017":
+            raise ValueError("Refusing to run outside Standalone Network")
+
         # fixed deployer and fixed salt will lead to deterministic contract address
         self.admin_account = super().create_funded_account(
             keypair=Keypair.from_mnemonic_phrase(DEPLOYER_ACCOUNT_MNEMONIC)

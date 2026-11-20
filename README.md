@@ -75,11 +75,13 @@ Agreement is based on **numeric distance in score points**. All fresh reports pa
 | ------- | ------- | ------- |
 | `max_staleness` | `3600` | Maximum report age in seconds, inclusive. |
 | `max_deviation` | `5` | Maximum absolute distance from the median in score points, inclusive. |
-| `quorum` | `1` | Minimum number of fresh reports within the deviation limit; an absolute count, not a percentage or automatic majority. |
+| `quorum` | `0` | Minimum number of fresh reports within the deviation limit; an absolute count, not a percentage or automatic majority. |
 
 These defaults apply when constructor options are omitted and when the corresponding stored settings are absent after an upgrade. Administrators can change them with `set_max_staleness`, `set_max_deviation`, and `set_quorum`.
 
-A quorum of `0` disables the agreement-count requirement, but at least one fresh report is still required. The default quorum of `1` allows a single fresh operator report to produce a result. Configure a higher quorum to require multiple agreeing operators; a quorum greater than the number of registered operators cannot be reached.
+A quorum of `0` (default) disables the agreement-count requirement, but at least one fresh report is still required.
+A quorum of `1` allows a single fresh operator report to produce a result.
+Configure a higher quorum to require multiple agreeing operators; a quorum greater than the number of registered operators cannot be reached.
 
 For example, with `max_deviation = 5`:
 
@@ -116,9 +118,12 @@ The administrator is configured when the contract is deployed.
 
 The administrator can:
 
-* replace the allowed operator set with `set_operators`, or update it with `add_operator` and `remove_operator`;
-* change the global maximum report age with `set_max_staleness`;
-* configure score agreement with `set_max_deviation` and `set_quorum`;
+* modify the contract parameters
+** replace the allowed operator set with `schedule_set_operators`, or update it with `schedule_add_operator` and `schedule_remove_operator`;
+** change the global maximum report age with `schedule_set_max_staleness`;
+** configure score agreement with `schedule_set_max_deviation` and `schedule_set_quorum`;
+* modify the governance parameters
+** change timelock delay with `schedule_set_governance_params`
 * upgrade the contract WASM.
 * hand over its privileges
 
@@ -145,15 +150,26 @@ version()                -> (u32, u32, u32)
 Administrative functions are:
 
 ```text
-set_operators(operators)
-add_operator(operator)
-remove_operator(operator)
-set_max_staleness(max_staleness)
-set_max_deviation(max_deviation)
-set_quorum(quorum)
-upgrade(new_wasm_hash)
-hand_over_admin(new_admin)
-accept_admin()
+schedule_set_parameters(parameters)
+  -- and partial versions
+  schedule_set_operators(operators)
+  schedule_add_operator(operator)
+  schedule_remove_operator(operator)
+  schedule_set_max_staleness(max_staleness)
+  schedule_set_max_deviation(max_deviation)
+  schedule_set_quorum(quorum)
+execute_set_parameters()
+cancel_set_parameters()
+schedule_set_governance_params(governance_parameters)
+execute_set_governance_params()
+cancel_set_governance_params()
+schedule_upgrade(new_wasm_hash)
+execute_upgrade()
+cancel_upgrade()
+schedule_admin_transfer(new_admin)
+execute_admin_transfer()
+cancel_admin_transfer()
+execute_admin_transfer()
 ```
 
 Operator functions are:
@@ -261,30 +277,56 @@ Configure the operator:
 
 ```bash
 ./invoke testnet alice \
-  add_operator \
+  schedule_add_operator \
   --operator <OPERATOR_ADDRESS>
+
+# wait timelock delay and then
+
+./invoke testnet alice \
+  execute_set_parameters
 ```
 
 Optionally change the default maximum staleness:
 
 ```bash
 ./invoke testnet alice \
-  set_max_staleness \
+  schedule_set_max_staleness \
   --max_staleness 900
+
+# wait timelock delay and then
+
+./invoke testnet alice \
+  execute_set_parameters
 ```
 
 The value is expressed in seconds. For example, `900` excludes reports older than 15 minutes.
 
 For a setup requiring two agreeing operators, register at least two operator addresses and configure consensus:
 
+prepare a parameters.json file:
+```json
+{
+    "max_deviation":5,
+    "max_staleness":3600,
+    "operators":
+    {
+        "G...": "void",
+        "G...": "void",
+    },
+    "quorum":2
+}
+```
+
 ```bash
 ./invoke testnet alice \
-  set_max_deviation \
-  --max_deviation 5
+  schedule_set_parameters \
+  --parameters "$(cat parameters.json)"
+
+
+# wait timelock delay and then
 
 ./invoke testnet alice \
-  set_quorum \
-  --quorum 2
+  execute_set_parameters
 ```
 
 Each operator must publish its own report for each monitored pair. Reads fail with `QuorumNotReached` until enough fresh reports agree with the median.
@@ -441,21 +483,30 @@ The contract currently defines the following errors:
 | 706 | `NoMaxStalenessSet` | Retained in the error enum for compatibility; consensus reads use the default when this setting is absent. |
 | 707 | `UnauthorizedOperator` | The publisher is not registered |
 | 708 | `QuorumNotReached` | Fresh reports exist, but fewer than `quorum` are within `max_deviation` points of the median. |
+| 709 | `TimeLocked` | An operation execution was requested before timelock delay is elapsed |
+| 710 | `Expired` | An operation execution was requested after the pending operation is expired (or without any pending operation at all) |
+| 711 | `ScheduledOperationInProgress` | a scheduled operation is already in progress - cancel it first |
+| 712 | `InvalidParam` | a parameter change is invalid (e.g. out of range) |
 
 For integrations guarding financial operations, `PairNotCovered`, `StaleInput`, and `QuorumNotReached` should normally be handled conservatively rather than ignored.
 
 ## Upgrading the Contract
 
-The repository includes an `upgrade` helper:
+The repository includes an `schedule_upgrade` helper:
 
 ```bash
 stellar contract build --optimize
-./upgrade testnet alice
+./schedule_upgrade testnet alice
 ```
 
 The upgrade must be authorized by the contract administrator.
 
-The helper uploads the newly built WASM and invokes the existing contract's `upgrade` function with the new WASM hash.
+The helper uploads the newly built WASM and invokes the existing contract's `schedule_upgrade` function with the new WASM hash.
+
+Once the timelock is elapsed:
+```bash
+./invoke testnet alice execute_upgrade
+```
 
 You can query the deployed contract version with:
 
@@ -493,7 +544,7 @@ contracts/
 
 deploy                             # Deployment helper
 invoke                             # Contract invocation helper
-upgrade                            # WASM upgrade helper
+schedule_upgrade                   # WASM upgrade helper
 docs/                              # Generated SDK/API documentation
 ```
 

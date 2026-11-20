@@ -33,7 +33,7 @@ The framework is composed of:
 From the repository root, start the simulation environment:
 
 ```bash
-cargo build-wasm
+stellar contract build
 cd simulation
 poetry install
 poetry run generate-bindings
