@@ -6,10 +6,6 @@ inputs:
   package:
     description: Cargo crate to build.
     required: true
-  out-dir:
-    description: Directory the WASM is written to.
-    required: false
-    default: out
   name:
     description: Filename to give the WASM. Defaults to the crate's own artifact name.
     required: false
@@ -31,30 +27,48 @@ runs:
       shell: bash
       env:
         PACKAGE: ${{ inputs.package }}
-        OUT_DIR: ${{ inputs.out-dir }}
         NAME: ${{ inputs.name }}
       run: |
+        set -euo pipefail
+
+        # Validate Cargo package name.
+        if [[ ! "$PACKAGE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+          echo "::error::Invalid package name"
+          exit 1
+        fi
+
+        # Validate output filename (basename only).
+        if [[ -n "$NAME" ]]; then
+          if [[ ! "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] ||
+             [[ "$NAME" == *..* ]]; then
+            echo "::error::Invalid WASM filename"
+            exit 1
+          fi
+        fi
+
         rustup update
         rustup target add wasm32v1-none
 
         stellar contract build --optimize \
           --package "${PACKAGE}" \
-          --out-dir "${OUT_DIR}" \
           --meta source_repo="github:${{ github.repository }}"
 
-        IN_WASM="${OUT_DIR}/${PACKAGE//-/_}.wasm"
-        OUT_WASM="${OUT_DIR}/${NAME:-${PACKAGE//-/_}.wasm}"
-
-        if [ "${IN_WASM}" != "${OUT_WASM}" ]; then
-          mv "${IN_WASM}" "${OUT_WASM}"
-        fi
+        OUT_DIR="target/wasm32v1-none/release"
+        WASM_BASENAME="${PACKAGE//-/_}.wasm"
+        WASM_FILENAME="${OUT_DIR}/${WASM_BASENAME}"
 
         # Mainnet caps contracts at 128 KiB; fail at half that, before it hurts.
-        SIZE=$(stat -c %s "${OUT_WASM}")
-        echo "${OUT_WASM}: ${SIZE} bytes"
+        SIZE=$(stat -c %s "${WASM_FILENAME}")
+        echo "${WASM_FILENAME}: ${SIZE} bytes"
         if [ "${SIZE}" -gt 65536 ]; then
-          echo "::error::${OUT_WASM} is ${SIZE} bytes, over the 64 KiB budget (mainnet limit: 128 KiB)."
+          echo "::error::${WASM_FILENAME} is ${SIZE} bytes, over the 64 KiB budget (mainnet limit: 128 KiB)."
           exit 1
+        fi
+
+        OUT_WASM="${OUT_DIR}/${NAME:-${WASM_BASENAME}}"
+
+        if [ "${WASM_FILENAME}" != "${OUT_WASM}" ]; then
+          cp "${WASM_FILENAME}" "${OUT_WASM}"
         fi
 
         echo "wasm=${OUT_WASM}" >> "$GITHUB_OUTPUT"

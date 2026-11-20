@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: ""
+      wasm-name:
+        description: "Expected filename inside the downloaded WASM artifact."
+        required: false
+        type: string
+        default: ""
       publish:
         description: "Actually publish to the registry. Anything else is a dry-run."
         required: false
@@ -28,7 +33,7 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Real publishes need the protected environment's approval; dry-runs don't.
     environment: ${{ inputs.publish && 'release' || 'dry-run' }}
     permissions:
@@ -90,24 +95,53 @@ jobs:
           name: ${{ inputs.wasm-artifact }}
           path: wasm
 
+      - name: Resolve downloaded WASM
+        id: downloaded-wasm
+        if: ${{ inputs.wasm-artifact != '' }}
+        env:
+          WASM_NAME: ${{ inputs.wasm-name }}
+        run: |
+          set -euo pipefail
+
+          # Validate the filename (no directories or path traversal).
+          if [[ ! "$WASM_NAME" =~ ^[a-zA-Z0-9_.-]+\.wasm$ ]] ||
+             [[ "$WASM_NAME" == *..* ]]; then
+            echo "::error::Invalid WASM filename: ${WASM_NAME}"
+            exit 1
+          fi
+
+          WASM="wasm/${WASM_NAME}"
+
+          if [[ ! -f "$WASM" || -L "$WASM" ]]; then
+            echo "::error::WASM file not found or is a symlink: ${WASM}"
+            exit 1
+          fi
+
+          echo "wasm=${WASM}" >> "$GITHUB_OUTPUT"
+
       - name: Build WASM
+        id: build-wasm
         if: ${{ !inputs.wasm-artifact }}
         uses: ./.github/actions/build-wasm
         with:
           package: ${{ env.PACKAGE }}
-          out-dir: wasm
 
       - name: Generate TypeScript bindings
+        env:
+          WASM_BUILT: ${{ steps.build-wasm.outputs.wasm }}
+          WASM_DOWNLOADED: ${{ steps.downloaded-wasm.outputs.wasm }}
         run: |
           set -euo pipefail
 
-          WASM=$(find wasm -name '*.wasm' | head -1)
+          WASM="${WASM_DOWNLOADED:-$WASM_BUILT}"
+
           echo "Generating bindings from ${WASM}"
           npx @stellar/stellar-sdk@16.2.0 generate \
             --wasm "${WASM}" \
             --output-dir sdk/typescript/packages/generated \
             --contract-name "${PACKAGE}" \
             --overwrite
+          cp generated-package-lock.json sdk/typescript/packages/generated/package-lock.json
 
       - name: Set package metadata
         working-directory: sdk/typescript/packages/generated
@@ -122,9 +156,8 @@ jobs:
 
       - name: Build package
         working-directory: sdk/typescript/packages/generated
-        run: | # zizmor: ignore[adhoc-packages]
-          npm install
-          npm install --save-dev @types/node
+        run: |
+          npm ci
           npm run build
 
       - name: Publish to GitHub Packages

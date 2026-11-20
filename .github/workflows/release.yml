@@ -14,7 +14,9 @@ env:
 jobs:
   # Builds the contract and publishes the GitHub Release.
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      wasm-name: ${{ steps.resolve-version.outputs.wasm-name }}
     environment: release
     permissions:
       contents: write
@@ -31,45 +33,60 @@ jobs:
           version: "27.0.0"
 
       - name: Resolve version
+        id: resolve-version
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
-          VERSION="${REF_NAME}"
-          VERSION="${VERSION#v}"
+          VERSION="${REF_NAME#v}"
+
+          # SECURITY: Only accept semantic versions (e.g. 1.2.3, 1.2.3-rc.1).
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] ||
+          [[ "$VERSION" == *..* ]]; then
+            echo "::error::Invalid version tag"
+            exit 1
+          fi
+
           CRATE_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+
           # The released binary and the crate must claim the same version.
           if [ "${VERSION}" != "${CRATE_VERSION}" ]; then
             echo "::error::Tag v${VERSION} does not match the crate version (${CRATE_VERSION} in Cargo.toml). Align them before tagging."
             exit 1
           fi
-          echo "WASM=${PACKAGE}_v${VERSION}.wasm" >> "$GITHUB_ENV"
+
+          WASM_NAME="${PACKAGE}_v${VERSION}.wasm"
+          echo "WASM_NAME=${WASM_NAME}" >> "$GITHUB_ENV"
+          echo "wasm-name=${WASM_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Build WASM
+        id: build-wasm
         uses: ./.github/actions/build-wasm
         with:
           package: ${{ env.PACKAGE }}
-          out-dir: out
-          name: ${{ env.WASM }}
+          name: ${{ env.WASM_NAME }}
 
       - name: Hash the WASM
-        run: sha256sum "out/${WASM}" | tee "out/${WASM}.sha256"
+        env:
+          WASM: ${{ steps.build-wasm.outputs.wasm }}
+        run: sha256sum "${WASM}" | tee "${WASM}.sha256"
 
       - name: Share the WASM with the SDK job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: contract-wasm
-          path: out/${{ env.WASM }}
+          path: ${{ steps.build-wasm.outputs.wasm }}
           retention-days: 1
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: out/${{ env.WASM }}
+          subject-path: ${{ steps.build-wasm.outputs.wasm }}
 
       - name: Write the release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REF_NAME: ${{ github.ref_name }}
+          WASM: ${{ steps.build-wasm.outputs.wasm }}
         run: |
           set -euo pipefail
 
@@ -85,7 +102,7 @@ jobs:
             echo "## Build information"
             echo "| | |"
             echo "|---|---|"
-            echo "| SHA-256 | \`$(cut -d' ' -f1 "out/${WASM}.sha256")\` |"
+            echo "| SHA-256 | \`$(cut -d' ' -f1 "${WASM}.sha256")\` |"
             echo "| stellar-cli | \`$(stellar --version | grep -oP 'stellar \K\S+' | head -1)\` |"
             echo "| rust | \`$(rustc --version)\` |"
             echo
@@ -103,12 +120,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REF_NAME: ${{ github.ref_name }}
+          WASM: ${{ steps.build-wasm.outputs.wasm }}
         run: |
           set -euo pipefail
 
           gh release create "${REF_NAME}" \
-            "out/${WASM}" \
-            "out/${WASM}.sha256" \
+            "${WASM}" \
+            "${WASM}.sha256" \
             --title "${REF_NAME}" \
             --notes-file notes.md \
             --verify-tag
@@ -121,8 +139,9 @@ jobs:
           JOB_ID: ${{ github.job }}
           RUN_ID: ${{ github.run_id }}
           PACKAGE_NAME: ${{ env.PACKAGE }}
+          WASM: ${{ steps.build-wasm.outputs.wasm }}
         run: |
-          export CONTRACT_HASH=$(cut -d' ' -f1 "out/${WASM}.sha256")
+          export CONTRACT_HASH=$(cut -d' ' -f1 "${WASM}.sha256")
           JSON_OBJECT=$(node -e "console.log(JSON.stringify({
             repository: process.env.REPOSITORY,
             commitHash: process.env.COMMIT_HASH,
@@ -155,4 +174,5 @@ jobs:
     with:
       version: ${{ github.ref_name }}
       wasm-artifact: contract-wasm
+      wasm-name: ${{ needs.release.outputs.wasm-name }}
       publish: true

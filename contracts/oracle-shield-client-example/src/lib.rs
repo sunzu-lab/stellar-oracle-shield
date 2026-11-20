@@ -22,6 +22,19 @@ pub struct Contract;
 
 #[contractimpl]
 impl Contract {
+    // SECURITY AUDIT NOTE
+    //
+    // Soroban native constructor (CAP-0058, Protocol 22+).
+    // `__constructor` is a reserved lifecycle function invoked exclusively
+    // by the Soroban host during contract creation.
+    //
+    // It CANNOT be invoked directly after deployment, even though it is
+    // declared `pub` inside `#[contractimpl]`.
+    //
+    // Reinitialization attacks through `__constructor` are prevented
+    // by the Soroban runtime. No explicit initialization guard is needed.
+    //
+    // Reference: https://github.com/stellar/stellar-protocol/blob/master/core/cap-0058.md
     /// initialize contract
     /// freeze monitored pair and stellar contract
     /// `oracle_shield_contract` - oracle shield contract address

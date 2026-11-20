@@ -24,6 +24,7 @@ jobs:
           persist-credentials: false
 
       - name: Build contract
+        id: build-wasm
         uses: ./.github/actions/build-wasm
         with:
           package: stellar-oracle-shield
@@ -31,7 +32,7 @@ jobs:
       - name: Install Poetry
         run: |
           python3 --version
-          pipx install poetry
+          pipx install poetry==2.5.1
 
       - name: Install dependencies
         working-directory: simulation
